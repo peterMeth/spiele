@@ -1,0 +1,14 @@
+[
+  {
+    "id": "pong",
+    "title": "Pong",
+    "desc": "Tischtennis gegen den PC oder zu zweit an einem Handy",
+    "color": "#1f5aa6"
+  },
+  {
+    "id": "snake",
+    "title": "Snake",
+    "desc": "Der Klassiker vom alten Handy, Level 1 bis 9",
+    "color": "#8fa06a"
+  }
+]

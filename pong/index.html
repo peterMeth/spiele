@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#1f5aa6">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<title>Pong</title>
+<style>
+/* VOICE: sporty, quick, physical — a hall at match point.
+   IDEA: a real table-tennis table seen from above, the phone is the table.
+   PICTURE: the blue table with white lines, net, red and black bats, orange ball.
+   COLOUR and TYPE: table blue + hall floor + orange ball; condensed system type for the scoreboard (works offline).
+   LAYOUT: scoreboard strip, table fills the rest, controls in one wrapping row at the bottom. */
+:root{color-scheme:light dark;--bg:light-dark(#e9ddc9,#17120e);--ink:light-dark(#1d1712,#f3ebe0);--muted:light-dark(#6d5f50,#b3a493);--panel:light-dark(#f7f0e4,#241c16);--line:light-dark(#d3c4ad,#3a2f26);--blue:#1f5aa6;--red:#d9322b;--ball:#ff8a1f;
+  --cond:"Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui,sans-serif}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,Roboto,sans-serif;overflow:hidden;display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);user-select:none;-webkit-user-select:none}
+.board{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;padding:10px 16px 6px;max-width:560px;width:100%;margin:0 auto}
+.side{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;color:var(--muted);white-space:nowrap}
+.side.r{justify-content:flex-end}
+.dot{width:14px;height:14px;border-radius:4px;flex:none}
+.score{font:700 clamp(40px,11vw,56px)/1 var(--cond);font-stretch:condensed;display:flex;gap:10px;align-items:center;font-variant-numeric:tabular-nums}
+.score i{font-style:normal;color:var(--muted);font-size:.6em}
+.stage{flex:1;position:relative;display:flex;align-items:center;justify-content:center;padding:4px 12px;touch-action:none}
+canvas{display:block;border-radius:6px;box-shadow:0 18px 40px rgba(0,0,0,.35),0 2px 0 rgba(0,0,0,.25);touch-action:none}
+.over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.msg{pointer-events:auto;background:var(--panel);color:var(--ink);border-radius:14px;padding:22px 24px;max-width:300px;text-align:center;box-shadow:0 12px 30px rgba(0,0,0,.3)}
+.msg h2{font:700 34px/1.05 var(--cond);font-stretch:condensed;margin:0 0 6px}
+.msg p{margin:0 0 16px;color:var(--muted);font-size:15px}
+.msg[hidden]{display:none}
+button{font:600 16px system-ui,Roboto,sans-serif;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button:focus-visible{outline:3px solid var(--ball);outline-offset:2px}
+button[hidden],.seg[hidden]{display:none}
+.go{background:var(--ball);border-color:var(--ball);color:#1d1208;width:100%}
+.bar{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:8px 12px 12px;max-width:560px;width:100%;margin:0 auto}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:0 12px}
+.seg button[aria-pressed=true]{background:var(--blue);color:#fff}
+a.home{display:inline-grid;place-items:center;min-height:44px;width:48px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+a.home svg{width:22px;height:22px}
+.hint{font-size:13px;color:var(--muted);text-align:center;margin:0 0 2px;min-height:1.2em}
+</style>
+</head>
+<body>
+<div class="board">
+  <div class="side"><span class="dot" style="background:#1b1b1b;border:1px solid #555"></span><span id="nTop">PC</span></div>
+  <div class="score"><span id="sc">0</span><i>:</i><span id="sp">0</span></div>
+  <div class="side r"><span id="nBot">Du</span><span class="dot" style="background:var(--red)"></span></div>
+</div>
+<div class="stage" id="stage">
+  <canvas id="c"></canvas>
+  <div class="over"><div class="msg" id="msg">
+    <h2 id="mt">Pong</h2>
+    <p id="mp"></p>
+    <button class="go" id="go">Spiel starten</button>
+  </div></div>
+</div>
+<p class="hint" id="best"></p>
+<div class="bar">
+  <a class="home" href="../" aria-label="Zur Spieleübersicht"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></svg></a>
+  <div class="seg" role="group" aria-label="Spielmodus">
+    <button data-m="0" aria-pressed="true">Gegen PC</button>
+    <button data-m="1" aria-pressed="false">1 vs 1</button>
+  </div>
+  <div class="seg" role="group" aria-label="Schwierigkeit" id="diffSeg">
+    <button data-d="0" aria-pressed="false">Leicht</button>
+    <button data-d="1" aria-pressed="true">Mittel</button>
+    <button data-d="2" aria-pressed="false">Schwer</button>
+  </div>
+  <button id="pause">Pause</button>
+  <button id="snd" aria-pressed="true">Ton an</button>
+  <button id="fs" hidden>Vollbild</button>
+</div>
+<script>
+{
+const W=450,H=800,PW=92,PH=14,R=9,WIN=11;
+// spd: Schlägertempo des PCs, err: max. Zielfehler pro Ballwechsel (ab ~55 verfehlt er), react: Reaktionszeit, predict: berechnet Abpraller voraus
+const DIFF=[{spd:190,err:85,react:.28,predict:false,max:560},{spd:280,err:72,react:.16,predict:true,max:660},{spd:400,err:40,react:.09,predict:true,max:780}];
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),stage=document.getElementById('stage');
+const $=id=>document.getElementById(id);
+let scale=1,state='ready',diff=1,mode=0,sound=true,ac=null,last=0,serveDir=1,aiTimer=0,aiTarget=W/2,aiErr=0;
+const p={x:W/2,tx:W/2,y:H-54},c={x:W/2,tx:W/2,y:40},b={x:W/2,y:H/2,vx:0,vy:0,sp:0},trail=[];
+let s={p:0,c:0};
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+let wins=+(store.get('pong_wins')||0),losses=+(store.get('pong_losses')||0);
+const sd=store.get('pong_diff');if(sd!==null)diff=+sd;
+const sm=store.get('pong_mode');if(sm!==null)mode=+sm;
+const DN=['leicht','mittel','schwer'];
+const names=()=>mode?['Spieler 2','Spieler 1']:['PC','Du'];
+
+function fit(){
+  const r=stage.getBoundingClientRect(),aw=r.width-24,ah=r.height-8;
+  scale=Math.max(.1,Math.min(aw/W,ah/H));
+  const dpr=window.devicePixelRatio||1;
+  cv.style.width=W*scale+'px';cv.style.height=H*scale+'px';
+  cv.width=Math.round(W*scale*dpr);cv.height=Math.round(H*scale*dpr);
+  ctx.setTransform(scale*dpr,0,0,scale*dpr,0,0);draw();
+}
+const ro=new ResizeObserver(fit);ro.observe(stage);
+
+function beep(f,d){
+  if(!sound)return;
+  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+    const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;
+    g.gain.setValueAtTime(.07,ac.currentTime);g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+d);
+    o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}
+}
+
+function serve(){
+  b.x=W/2;b.y=H/2;b.sp=mode?400:330+diff*25;trail.length=0;newErr();
+  const a=(Math.random()*.6-.3);
+  b.vx=Math.sin(a)*b.sp;b.vy=Math.cos(a)*b.sp*serveDir;
+}
+function setScore(){
+  $('sc').textContent=s.c;$('sp').textContent=s.p;
+  store.set('stat_pong',`${wins} Siege · ${losses} Niederlagen gegen PC`);
+  $('best').textContent=mode?'Unten wischt Spieler 1, oben Spieler 2':`Bilanz gegen den PC: ${wins} Siege · ${losses} Niederlagen`;
+}
+function show(t,txt,btn){$('mt').textContent=t;$('mp').textContent=txt;$('go').textContent=btn;$('msg').hidden=false}
+function intro(){
+  show('Pong',mode
+    ?'Zwei Spieler, ein Handy: Spieler 1 wischt auf der unteren Tischhälfte, Spieler 2 auf der oberen. Gespielt wird bis 11.'
+    :'Wisch mit dem Finger über den Tisch, um deinen roten Schläger zu bewegen. Gespielt wird bis 11.','Spiel starten');
+}
+function start(){
+  if(ac&&ac.state==='suspended')ac.resume();
+  if(state==='over'||state==='ready'){s={p:0,c:0};serveDir=1;setScore();serve()}
+  $('msg').hidden=true;state='play';$('pause').textContent='Pause';last=performance.now();
+  requestAnimationFrame(loop);
+}
+function pause(){
+  if(state==='play'){state='pause';$('pause').textContent='Weiter';const n=names();show('Pause',`Stand ${n[1]} ${s.p} : ${s.c} ${n[0]}`,'Weiter')}
+  else if(state==='pause')start();
+}
+function reset(){state='ready';s={p:0,c:0};p.x=p.tx=c.x=c.tx=W/2;trail.length=0;$('pause').textContent='Pause';setScore();intro();draw()}
+
+function newErr(){const e=DIFF[diff].err;aiErr=(Math.random()*2-1)*e}
+function hitPaddle(px,py,dir){
+  const off=Math.max(-1,Math.min(1,(b.x-px)/(PW/2+R)));
+  b.sp=Math.min(b.sp*1.04,mode?850:DIFF[diff].max);if(dir<0)newErr();
+  const ang=off*1.05;
+  b.vx=Math.sin(ang)*b.sp;b.vy=Math.cos(ang)*b.sp*dir;
+  b.y=dir<0?py-R:py+PH+R;
+  beep(dir<0?520:440,.06);
+}
+
+function point(bottomScored){
+  if(bottomScored)s.p++;else s.c++;
+  setScore();beep(bottomScored?780:200,.18);
+  serveDir=bottomScored?-1:1;
+  const lead=Math.abs(s.p-s.c),top=Math.max(s.p,s.c);
+  if(top>=WIN&&lead>=2){
+    state='over';
+    if(mode){show(s.p>s.c?'Spieler 1 gewinnt!':'Spieler 2 gewinnt!',`Endstand ${s.p} : ${s.c}.`,'Noch mal')}
+    else if(s.p>s.c){wins++;store.set('pong_wins',wins);show('Gewonnen!',`${s.p} : ${s.c} gegen den PC (${DN[diff]}).`,'Noch mal')}
+    else{losses++;store.set('pong_losses',losses);show('Verloren',`${s.p} : ${s.c}. Der PC war diesmal schneller.`,'Revanche')}
+    setScore();return;
+  }
+  serve();
+}
+
+function follow(o,dt){const mv=2600*dt;o.x+=Math.max(-mv,Math.min(mv,o.tx-o.x));o.x=Math.max(PW/2,Math.min(W-PW/2,o.x))}
+function step(dt){
+  follow(p,dt);
+  if(mode)follow(c,dt);
+  else{
+    const d=DIFF[diff];aiTimer-=dt;
+    if(aiTimer<=0){aiTimer=d.react;
+      if(b.vy<0){let x=b.x;
+        if(d.predict){const t=(b.y-c.y-PH)/-b.vy;x=b.x+b.vx*t;while(x<0||x>W){x=x<0?-x:2*W-x}}
+        aiTarget=x+aiErr}
+      else aiTarget=W/2+(b.x-W/2)*.3}
+    const cm=d.spd*dt;c.x+=Math.max(-cm,Math.min(cm,aiTarget-c.x));
+    c.x=Math.max(PW/2,Math.min(W-PW/2,c.x));
+  }
+  const n=Math.ceil(b.sp*dt/6);
+  for(let i=0;i<n;i++){
+    const h=dt/n;b.x+=b.vx*h;b.y+=b.vy*h;
+    if(b.x<R){b.x=R;b.vx=Math.abs(b.vx);beep(300,.03)}
+    if(b.x>W-R){b.x=W-R;b.vx=-Math.abs(b.vx);beep(300,.03)}
+    if(b.vy>0&&b.y+R>=p.y&&b.y-R<=p.y+PH&&Math.abs(b.x-p.x)<=PW/2+R)hitPaddle(p.x,p.y,-1);
+    if(b.vy<0&&b.y-R<=c.y+PH&&b.y+R>=c.y&&Math.abs(b.x-c.x)<=PW/2+R)hitPaddle(c.x,c.y,1);
+    if(b.y>H+R*2){point(false);return}
+    if(b.y<-R*2){point(true);return}
+  }
+  trail.push({x:b.x,y:b.y});if(trail.length>8)trail.shift();
+}
+
+function rr(x,y,w,h,r){ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y,w,h,r):ctx.rect(x,y,w,h)}
+function bat(x,y,col,edge){
+  ctx.fillStyle='rgba(0,0,0,.28)';rr(x-PW/2+4,y+6,PW,PH,7);ctx.fill();
+  const g=ctx.createLinearGradient(0,y,0,y+PH);g.addColorStop(0,edge);g.addColorStop(.35,col);g.addColorStop(1,col);
+  ctx.fillStyle=g;rr(x-PW/2,y,PW,PH,7);ctx.fill();
+}
+function draw(){
+  const g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,'#2466b8');g.addColorStop(1,'#1a4d90');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(255,255,255,.92)';ctx.lineWidth=6;ctx.strokeRect(3,3,W-6,H-6);
+  ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(W/2,6);ctx.lineTo(W/2,H-6);ctx.stroke();
+  // in 1 vs 1 the top player's score is also printed on the table, readable from their side
+  if(mode&&state!=='ready'){
+    ctx.font='700 64px "Roboto Condensed",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(255,255,255,.16)';
+    ctx.fillText(s.p,W/2,H*.75);ctx.save();ctx.translate(W/2,H*.25);ctx.rotate(Math.PI);ctx.fillText(s.c,0,0);ctx.restore();
+  }
+  ctx.fillStyle='rgba(0,0,0,.25)';ctx.fillRect(0,H/2+3,W,8);
+  ctx.fillStyle='#f2f2f2';ctx.fillRect(0,H/2-4,W,4);
+  ctx.fillStyle='rgba(20,20,20,.55)';for(let x=0;x<W;x+=8)ctx.fillRect(x,H/2,4,5);
+  ctx.fillStyle='#222';ctx.fillRect(-2,H/2-7,8,14);ctx.fillRect(W-6,H/2-7,8,14);
+  bat(c.x,c.y,'#1b1b1b','#5a5a5a');
+  bat(p.x,p.y,'#d9322b','#ff7a6e');
+  if(state!=='ready'){
+    trail.forEach((t,i)=>{ctx.fillStyle=`rgba(255,160,70,${i/trail.length*.35})`;ctx.beginPath();ctx.arc(t.x,t.y,R*(.4+i/trail.length*.5),0,7);ctx.fill()});
+    ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.arc(b.x+5,b.y+7,R,0,7);ctx.fill();
+    const bg=ctx.createRadialGradient(b.x-3,b.y-3,1,b.x,b.y,R);bg.addColorStop(0,'#ffd29a');bg.addColorStop(1,'#ff8a1f');
+    ctx.fillStyle=bg;ctx.beginPath();ctx.arc(b.x,b.y,R,0,7);ctx.fill();
+  }
+}
+function loop(t){
+  if(state!=='play')return draw();
+  const dt=Math.min(.033,(t-last)/1000);last=t;step(dt);draw();
+  if(state==='play')requestAnimationFrame(loop);
+}
+
+// Touch/mouse: in 1 vs 1 each finger steers the bat on its own half (multi-touch)
+function aim(e){
+  const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)/scale,y=(e.clientY-r.top)/scale;
+  if(mode&&y<H/2)c.tx=x;else p.tx=x;
+}
+stage.addEventListener('pointerdown',e=>{if(e.target.closest('.msg'))return;aim(e)});
+stage.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||e.buttons||e.pressure>0)aim(e)});
+const keys={};
+addEventListener('keydown',e=>{
+  const k=e.key.length===1?e.key.toLowerCase():e.key;
+  if(['ArrowLeft','ArrowRight','a','d'].includes(k)){keys[k]=1;if(k.startsWith('Arrow'))e.preventDefault()}
+  if(k===' '){e.preventDefault();state==='play'||state==='pause'?pause():start()}
+});
+addEventListener('keyup',e=>{keys[e.key.length===1?e.key.toLowerCase():e.key]=0});
+setInterval(()=>{
+  if(keys.ArrowLeft)p.tx=p.x-60;if(keys.ArrowRight)p.tx=p.x+60;
+  if(mode){if(keys.a)c.tx=c.x-60;if(keys.d)c.tx=c.x+60}
+},16);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='play')pause()});
+
+$('go').addEventListener('click',start);
+$('pause').addEventListener('click',()=>{if(state==='play'||state==='pause')pause()});
+$('snd').addEventListener('click',e=>{sound=!sound;e.currentTarget.textContent=sound?'Ton an':'Ton aus';e.currentTarget.setAttribute('aria-pressed',sound)});
+
+const dsegs=[...document.querySelectorAll('[data-d]')],msegs=[...document.querySelectorAll('[data-m]')];
+function setDiff(d){diff=d;store.set('pong_diff',d);dsegs.forEach(x=>x.setAttribute('aria-pressed',+x.dataset.d===d))}
+function setMode(m){
+  mode=m;store.set('pong_mode',m);msegs.forEach(x=>x.setAttribute('aria-pressed',+x.dataset.m===m));
+  $('diffSeg').hidden=!!m;const n=names();$('nTop').textContent=n[0];$('nBot').textContent=n[1];reset();
+}
+dsegs.forEach(x=>x.addEventListener('click',()=>setDiff(+x.dataset.d)));
+msegs.forEach(x=>x.addEventListener('click',()=>{if(+x.dataset.m!==mode)setMode(+x.dataset.m)}));
+
+// Fullscreen button: hidden when already running as installed fullscreen app
+const fsBtn=$('fs'),root=document.documentElement;
+const installed=matchMedia('(display-mode: fullscreen)').matches||matchMedia('(display-mode: standalone)').matches;
+const canFs=document.fullscreenEnabled||document.webkitFullscreenEnabled;
+fsBtn.hidden=installed||!canFs;
+fsBtn.addEventListener('click',async()=>{
+  try{
+    if(document.fullscreenElement||document.webkitFullscreenElement){await (document.exitFullscreen||document.webkitExitFullscreen).call(document)}
+    else{await (root.requestFullscreen||root.webkitRequestFullscreen).call(root,{navigationUI:'hide'});
+      try{await screen.orientation.lock('portrait')}catch(e){}}
+  }catch(e){$('best').textContent='Vollbild wird hier nicht erlaubt'}
+});
+document.addEventListener('fullscreenchange',()=>{fsBtn.textContent=document.fullscreenElement?'Vollbild aus':'Vollbild';fit()});
+
+// Offline support when served over https (e.g. GitHub Pages)
+if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.serviceWorker.register('../sw.js').catch(()=>{})}
+
+setDiff(diff);setMode(mode);fit();
+}
+</script>
+</body>
+</html>
