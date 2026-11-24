@@ -132,6 +132,7 @@ function intro(){
 }
 function start(){
   if(ac&&ac.state==='suspended')ac.resume();
+  try{screen.orientation.lock('portrait').catch(()=>{})}catch(e){}
   if(state==='over'||state==='ready'){s={p:0,c:0};serveDir=1;setScore();serve()}
   $('msg').hidden=true;state='play';$('pause').textContent='Pause';last=performance.now();
   requestAnimationFrame(loop);

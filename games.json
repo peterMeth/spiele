@@ -10,5 +10,11 @@
     "title": "Snake",
     "desc": "Der Klassiker vom alten Handy, Level 1 bis 9",
     "color": "#8fa06a"
+  },
+  {
+    "id": "gorillas",
+    "title": "Gorillas",
+    "desc": "Bananenwurf über die Skyline, gegen den PC oder zu zweit",
+    "color": "#f2a65a"
   }
 ]

@@ -1,13 +1,13 @@
 {
   "name": "Spiele",
   "short_name": "Spiele",
-  "description": "Peters Spielesammlung: Pong, Snake und mehr",
+  "description": "Peters Spielesammlung: Pong, Snake, Gorillas und mehr",
   "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",
   "display_override": ["fullscreen", "standalone"],
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#24272b",
   "theme_color": "#24272b",
   "icons": [

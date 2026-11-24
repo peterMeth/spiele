@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#1b1d23">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Gorillas</title>
+<style>
+/* VOICE: cheeky, explosive, a little retro — banana duel at dusk.
+   IDEA: a city skyline at sunset as the battlefield, two gorillas on the rooftops.
+   PICTURE: the skyline canvas with lit windows, gorillas, spinning banana, craters.
+   COLOUR and TYPE: dusk sky blue to orange, graphite controls, banana yellow accent; condensed system type.
+   LAYOUT: thin top bar (players, wind), skyline fills the middle, aim controls in one row at the bottom. */
+:root{color-scheme:dark;--bg:#1b1d23;--panel:#262932;--edge:#383c48;--ink:#f1efe8;--muted:#a7a9b3;--ban:#f4d03f;--p2:#ff8fa3;
+  --cond:"Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui,sans-serif}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.35 system-ui,Roboto,sans-serif;overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"top" "stage" "ctrl";
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);user-select:none;-webkit-user-select:none}
+.top{grid-area:top;display:flex;align-items:center;gap:8px;padding:6px 10px}
+.pl{display:flex;align-items:center;gap:8px;padding:4px 10px;border-radius:10px;border:2px solid transparent;white-space:nowrap}
+.pl b{font-weight:600;color:var(--muted)}
+.pl span{font:700 26px/1 var(--cond);font-variant-numeric:tabular-nums}
+.pl.on{border-color:var(--c)}.pl.on b{color:var(--ink)}
+#p0{--c:var(--ban)}#p1{--c:var(--p2)}
+.wind{flex:1;text-align:center;font-weight:600;color:var(--muted);white-space:nowrap}
+.wind strong{color:var(--ink);font:700 20px/1 var(--cond)}
+.ico{display:grid;place-items:center;width:44px;height:44px;padding:0;border-radius:10px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);cursor:pointer;flex:none}
+.ico svg{width:22px;height:22px}
+.ico[hidden]{display:none}
+.stage{grid-area:stage;position:relative;min-height:0;touch-action:none}
+canvas{position:absolute;display:block;touch-action:none;border-radius:4px}
+.rot{position:absolute;left:50%;top:8px;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:6px 12px;border-radius:20px;font-size:13px;white-space:nowrap;pointer-events:none}
+.rot[hidden]{display:none}
+.ctrl{grid-area:ctrl;display:flex;flex-wrap:wrap;gap:8px 14px;justify-content:center;align-items:center;padding:6px 10px 10px}
+.ctrl.off{opacity:.45;pointer-events:none}
+.num{display:flex;align-items:center;gap:6px}
+.num span{color:var(--muted);font-weight:600}
+.num output{font:700 24px/1 var(--cond);min-width:3ch;text-align:center;font-variant-numeric:tabular-nums}
+button{font:600 15px system-ui,Roboto,sans-serif;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);cursor:pointer;touch-action:manipulation}
+.num button{width:44px;padding:0;font-size:22px}
+button:focus-visible,.ico:focus-visible{outline:3px solid var(--ban);outline-offset:2px}
+.go{background:var(--ban);border-color:var(--ban);color:#2a2105}
+.over{position:fixed;inset:0;z-index:5;display:flex;align-items:safe center;justify-content:center;padding:12px;background:rgba(15,16,20,.55);overflow:auto}
+.over[hidden]{display:none}
+.msg{background:var(--panel);border-radius:14px;padding:18px 20px;width:min(380px,100%);box-shadow:0 12px 30px rgba(0,0,0,.4);margin:auto}
+.msg h2{font:700 34px/1.05 var(--cond);margin:0 0 4px}
+.msg p{margin:0 0 12px;color:var(--muted)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.row[hidden]{display:none}
+.seg{display:flex;border:1px solid var(--edge);border-radius:10px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:0 12px}
+.seg button[aria-pressed=true]{background:var(--ban);color:#2a2105}
+.msg .go{width:100%;margin-top:4px}
+@media (max-width:600px){
+  .top{flex-wrap:wrap;justify-content:space-between}
+  .top::before{content:"";order:4;flex-basis:100%}
+  #p0{order:5;flex:1 1 0}.wind{order:6;flex:1 1 0}#p1{order:7;flex:1 1 0;justify-content:flex-end}
+  .pl{padding:2px 8px}
+}
+/* landscape phones: controls move into a side column so the skyline gets the full height */
+@media (orientation:landscape) and (max-height:560px){
+  body{grid-template-columns:minmax(0,1fr) 178px;grid-template-rows:auto minmax(0,1fr);grid-template-areas:"stage top" "stage ctrl"}
+  .top{flex-wrap:wrap;justify-content:center;gap:6px;padding:6px 6px 0}
+  .ico{width:38px;height:38px}
+  .pl{order:5;flex:1 1 40%;justify-content:center;padding:2px 6px;gap:6px}
+  .pl span{font-size:22px}
+  .wind{order:6;flex:1 1 100%;font-size:14px}
+  .ctrl{flex-direction:column;flex-wrap:nowrap;justify-content:flex-end;gap:6px;padding:6px 8px 10px}
+  .num{flex-wrap:wrap;justify-content:center;gap:4px 6px}
+  .num span{flex:1 1 100%;text-align:center;font-size:13px}
+  .num button{width:40px;min-height:40px}
+  .num output{font-size:22px}
+  #throw{width:100%}
+  .msg{padding:14px 18px}.msg h2{font-size:28px}.row{margin-bottom:8px}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="ico" href="../" aria-label="Zur Spieleübersicht"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></svg></a>
+  <button class="ico" id="menu" aria-label="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <div class="pl" id="p0"><b id="n0">Du</b><span id="s0">0</span></div>
+  <div class="wind" id="wind"></div>
+  <div class="pl" id="p1"><span id="s1">0</span><b id="n1">PC</b></div>
+  <button class="ico" id="snd" aria-label="Ton aus">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><g id="waves"><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a7.5 7.5 0 0 1 0 11"/></g><g id="mute" style="display:none"><path d="M16.5 9.5l5 5M21.5 9.5l-5 5"/></g></svg>
+  </button>
+  <button class="ico" id="fs" aria-label="Vollbild" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+</div>
+<div class="stage" id="stage">
+  <canvas id="c"></canvas>
+  <div class="rot" id="rot" hidden>Handy quer halten für mehr Platz</div>
+  <div class="over" id="over"><div class="msg">
+    <h2 id="mt">Gorillas</h2>
+    <p id="mp">Triff den anderen Gorilla mit der Banane. Zielen über Winkel und Kraft oder durch Ziehen auf dem Spielfeld. Achte auf den Wind.</p>
+    <div class="row"><span>Modus</span><div class="seg" id="segMode"><button data-v="0">Gegen PC</button><button data-v="1">1 vs 1</button></div></div>
+    <div class="row" id="rowDiff"><span>PC</span><div class="seg" id="segDiff"><button data-v="0">Leicht</button><button data-v="1">Mittel</button><button data-v="2">Schwer</button></div></div>
+    <div class="row"><span>Spiel bis</span><div class="seg" id="segTarget"><button data-v="3">3</button><button data-v="5">5</button><button data-v="10">10</button></div></div>
+    <button class="go" id="go">Spiel starten</button>
+  </div></div>
+</div>
+<div class="ctrl off" id="ctrl">
+  <div class="num"><span>Winkel</span><button data-adj="angle,-1" aria-label="Winkel kleiner">−</button><output id="ang">45°</output><button data-adj="angle,1" aria-label="Winkel größer">+</button></div>
+  <div class="num"><span>Kraft</span><button data-adj="power,-1" aria-label="Kraft kleiner">−</button><output id="pow">50</output><button data-adj="power,1" aria-label="Kraft größer">+</button></div>
+  <button class="go" id="throw">Werfen</button>
+</div>
+<script>
+{
+const $=id=>document.getElementById(id);
+const W=960,H=540,G=300,DT=1/120;
+const cv=$('c'),ctx=cv.getContext('2d'),stage=$('stage');
+const city=document.createElement('canvas');city.width=W;city.height=H;
+const cctx=city.getContext('2d',{willReadFrequently:true});
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+// err: Streuung des PCs beim ersten Wurf einer Runde, wird mit jedem Wurf kleiner
+const DIFF=[{err:.30,n:'leicht'},{err:.16,n:'mittel'},{err:.07,n:'schwer'}];
+let mode=+(store.get('gor_mode')??0),diff=+(store.get('gor_diff')??1),target=+(store.get('gor_target')??3);
+let wins=+(store.get('gor_wins')||0),losses=+(store.get('gor_losses')||0);
+let sound=(store.get('gor_sound')??'1')==='1',ac=null;
+let scale=1,state='menu',turn=0,starter=0,wind=0,dead=-1,dance=-1,ban=null,booms=[],stars=[],aiShots=0,tok=0;
+let throwT=0,thrower=0,animT=0,toastTxt='',toastT=0,cdata=null,gor=[{x:0,y:0},{x:0,y:0}];
+const P=[{score:0,angle:45,power:50,trail:[]},{score:0,angle:45,power:50,trail:[]}];
+const names=()=>mode?['Spieler 1','Spieler 2']:['Du','PC'];
+const isAI=i=>mode===0&&i===1;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+store.set('stat_gorillas',`${wins} Siege · ${losses} Niederlagen gegen PC`);
+
+function fit(){
+  const r=stage.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+  scale=Math.max(.1,Math.min((r.width-8)/W,(r.height-8)/H));
+  const w=W*scale,h=H*scale;
+  cv.style.width=w+'px';cv.style.height=h+'px';cv.style.left=(r.width-w)/2+'px';cv.style.top=(r.height-h)/2+'px';
+  cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);ctx.setTransform(scale*dpr,0,0,scale*dpr,0,0);
+  $('rot').hidden=!(r.height>r.width);
+}
+const ro=new ResizeObserver(fit);ro.observe(stage);
+
+// ---------- sound ----------
+function actx(){ac=ac||new (window.AudioContext||window.webkitAudioContext)();return ac}
+function beep(f,d,type='square',vol=.06){if(!sound)return;try{const a=actx(),o=a.createOscillator(),g=a.createGain();o.type=type;o.frequency.setValueAtTime(f,a.currentTime);
+  o.frequency.exponentialRampToValueAtTime(f*1.8,a.currentTime+d);g.gain.setValueAtTime(vol,a.currentTime);g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+d);o.connect(g).connect(a.destination);o.start();o.stop(a.currentTime+d)}catch(e){}}
+function noise(d,vol){if(!sound)return;try{const a=actx(),n=Math.floor(a.sampleRate*d),buf=a.createBuffer(1,n,a.sampleRate),ch=buf.getChannelData(0);
+  for(let i=0;i<n;i++)ch[i]=(Math.random()*2-1)*Math.pow(1-i/n,2);const s=a.createBufferSource(),g=a.createGain();g.gain.value=vol;s.buffer=buf;s.connect(g).connect(a.destination);s.start()}catch(e){}}
+function vib(ms){try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}}
+
+// ---------- city ----------
+const BCOL=['#5d6b7a','#8e4b52','#3f6e6a','#7d6b4f','#55597a','#6f4f6b'];
+function makeCity(){
+  cctx.clearRect(0,0,W,H);const bl=[];let x=0;
+  while(x<W){let w=Math.round(rnd(52,96));if(W-x-w<46)w=W-x;const h=Math.round(rnd(110,350));bl.push({x,w,h});x+=w}
+  bl.forEach(b=>{
+    cctx.fillStyle=BCOL[Math.floor(Math.random()*BCOL.length)];cctx.fillRect(b.x+1,H-b.h,b.w-2,b.h);
+    for(let wy=H-b.h+10;wy<H-14;wy+=18)for(let wx=b.x+7;wx<b.x+b.w-12;wx+=14){
+      cctx.fillStyle=Math.random()<.55?'#f7d774':'#2a2c36';cctx.fillRect(wx,wy,7,10)}
+  });
+  const li=1+Math.floor(Math.random()*2),ri=bl.length-2-Math.floor(Math.random()*2);
+  [bl[li],bl[ri]].forEach((b,k)=>{gor[k]={x:b.x+b.w/2,y:H-b.h}});
+  cdata=cctx.getImageData(0,0,W,H).data;
+  stars=Array.from({length:45},()=>[rnd(0,W),rnd(0,H*.5),rnd(.6,1.6)]);
+}
+function solid(x,y){if(x<0||x>=W||y<0||y>=H)return false;return cdata[((y|0)*W+(x|0))*4+3]>40}
+function hitGor(x,y){for(let k=0;k<2;k++){const g=gor[k];if(k!==dead&&x>g.x-15&&x<g.x+15&&y>g.y-48&&y<g.y)return k}return -1}
+
+// ---------- physics (shared by the game and the PC's planning) ----------
+function launch(i,a,p){const g=gor[i],dir=i?-1:1,r=a*Math.PI/180,v=p*9;return{x:g.x+dir*12,y:g.y-52,vx:Math.cos(r)*v*dir,vy:-Math.sin(r)*v,t:0,i,n:0}}
+function adv(b){
+  b.vx+=wind*DT;b.vy+=G*DT;b.x+=b.vx*DT;b.y+=b.vy*DT;b.t+=DT;b.n++;
+  if(b.x<-60||b.x>W+60||b.y>H+10||b.t>12)return{type:'out'};
+  const k=hitGor(b.x,b.y);if(k>=0&&!(k===b.i&&b.t<.3))return{type:'gor',k};
+  if(solid(b.x,b.y))return{type:'bld'};
+  return null;
+}
+function sim(i,a,p){const b=launch(i,a,p);let r;while(!(r=adv(b)));r.x=b.x;r.y=b.y;return r}
+
+function aiPlan(){
+  const tg=gor[0],hits=[];let best=[45,50],bd=1e9;
+  for(let a=20;a<=80;a+=3)for(let p=15;p<=100;p++){
+    const r=sim(1,a,p);
+    if(r.type==='gor'&&r.k===0)hits.push([a,p]);
+    else if(r.type!=='gor'){const d=Math.hypot(r.x-tg.x,(r.y-tg.y)*.5);if(d<bd){bd=d;best=[a,p]}}
+  }
+  let[a,p]=hits.length?hits[Math.floor(Math.random()*hits.length)]:best;
+  const e=DIFF[diff].err*Math.pow(.65,aiShots);aiShots++;
+  p=Math.round(clamp(p*(1+(Math.random()*2-1)*e),1,100));
+  a=Math.round(clamp(a+(Math.random()*2-1)*e*25,1,89));
+  return[a,p];
+}
+
+// ---------- flow ----------
+function later(ms,fn){const t=tok;setTimeout(()=>{if(t===tok)fn()},ms)}
+function toast(t,s=1.8){toastTxt=t;toastT=s}
+function updScore(){
+  const n=names();$('n0').textContent=n[0];$('n1').textContent=n[1];$('s0').textContent=P[0].score;$('s1').textContent=P[1].score;
+  $('p0').classList.toggle('on',(state==='aim'||state==='ai'||state==='fly')&&turn===0);
+  $('p1').classList.toggle('on',(state==='aim'||state==='ai'||state==='fly')&&turn===1);
+}
+function updWind(){
+  const s=Math.abs(wind);
+  $('wind').innerHTML=s<1?'Windstill':`Wind <strong>${wind<0?'←':'→'} ${Math.round(s)}</strong>`;
+}
+function updCtrl(){
+  const p=P[turn];$('ang').textContent=p.angle+'°';$('pow').textContent=p.power;
+  $('ctrl').classList.toggle('off',state!=='aim');updScore();
+}
+function newRound(){
+  makeCity();wind=Math.random()<.15?0:rnd(-45,45);dead=-1;dance=-1;aiShots=0;ban=null;booms=[];
+  P.forEach(p=>p.trail=[]);turn=starter;updWind();beginTurn();
+}
+function beginTurn(){
+  state=isAI(turn)?'ai':'aim';updCtrl();
+  if(state==='ai'){toast('Der PC zielt …',1);later(700,()=>{const[a,p]=aiPlan();P[1].angle=a;P[1].power=p;updCtrl();later(650,()=>throwB(1))})}
+}
+function throwB(i){
+  if(state!=='aim'&&state!=='ai')return;
+  if(ac&&ac.state==='suspended')ac.resume();
+  ban=launch(i,P[i].angle,P[i].power);P[i].trail=[];state='fly';thrower=i;throwT=.35;updCtrl();beep(300,.18,'triangle',.05);
+}
+function boom(x,y,r,big){
+  cctx.globalCompositeOperation='destination-out';cctx.beginPath();cctx.arc(x,y,r,0,7);cctx.fill();cctx.globalCompositeOperation='source-over';
+  cdata=cctx.getImageData(0,0,W,H).data;booms.push({x,y,r,t:0,big});noise(big?.9:.4,big?.5:.3);vib(big?[80,40,160]:40);
+}
+function handle(r){
+  const bx=ban.x,by=ban.y;ban=null;state='boom';updCtrl();
+  if(r.type==='gor'){
+    const k=r.k,w=1-k,n=names();boom(gor[k].x,gor[k].y-22,54,true);dead=k;dance=w;P[w].score++;updScore();
+    toast(k===thrower?`${n[thrower]} hat sich selbst getroffen!`:`Treffer! Punkt für ${n[w]}`,2.2);
+    later(2400,()=>{if(P[w].score>=target)return finish(w);starter=1-starter;newRound()});
+  }else if(r.type==='bld'){boom(bx,by,26,false);later(500,()=>{turn=1-turn;beginTurn()})}
+  else{toast('Daneben',.8);later(400,()=>{turn=1-turn;beginTurn()})}
+}
+function finish(w){
+  state='over';updCtrl();const n=names();
+  if(!mode){if(w===0)wins++;else losses++;store.set('gor_wins',wins);store.set('gor_losses',losses);store.set('stat_gorillas',`${wins} Siege · ${losses} Niederlagen gegen PC`)}
+  $('mt').textContent=mode?`${n[w]} gewinnt!`:(w===0?'Gewonnen!':'Verloren');
+  $('mp').textContent=`Endstand ${P[0].score} : ${P[1].score}.`+(mode?'':` Bilanz gegen den PC: ${wins} Siege, ${losses} Niederlagen.`);
+  $('go').textContent='Noch mal';$('over').hidden=false;
+}
+async function startMatch(){
+  tok++;if(ac&&ac.state==='suspended')ac.resume();
+  P.forEach(p=>{p.score=0;p.angle=45;p.power=50});starter=0;$('over').hidden=true;
+  try{await screen.orientation.lock('landscape')}catch(e){}
+  newRound();if(!isAI(0))toast('Tipp: auf dem Spielfeld ziehen und loslassen',2.6);
+}
+function openMenu(){tok++;state='menu';ban=null;updCtrl();$('mt').textContent='Gorillas';$('go').textContent='Spiel starten';$('over').hidden=false}
+
+// ---------- drawing ----------
+function line(x1,y1,x2,y2){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()}
+function drawGor(g,pose){
+  const x=g.x,y=g.y,fur='#6e4223';ctx.save();ctx.lineCap='round';ctx.strokeStyle=fur;ctx.fillStyle=fur;
+  ctx.lineWidth=7;line(x-6,y-12,x-8,y-2);line(x+6,y-12,x+8,y-2);
+  ctx.beginPath();ctx.roundRect?ctx.roundRect(x-13,y-33,26,23,8):ctx.rect(x-13,y-33,26,23);ctx.fill();
+  ctx.fillStyle='#a8743f';ctx.beginPath();ctx.ellipse(x,y-21,8,7,0,0,7);ctx.fill();
+  ctx.lineWidth=6;
+  const up=s=>pose===3||(pose===1&&s<0)||(pose===2&&s>0);
+  [-1,1].forEach(s=>up(s)?line(x+s*11,y-29,x+s*15,y-50):line(x+s*11,y-29,x+s*17,y-12));
+  ctx.fillStyle=fur;ctx.beginPath();ctx.arc(x,y-39,9.5,0,7);ctx.fill();
+  ctx.fillStyle='#d9a066';ctx.beginPath();ctx.ellipse(x,y-37,6.5,5.5,0,0,7);ctx.fill();
+  ctx.fillStyle='#1b1209';ctx.fillRect(x-4.5,y-41,2.5,2.5);ctx.fillRect(x+2,y-41,2.5,2.5);ctx.fillRect(x-2.5,y-35,5,1.6);
+  ctx.restore();
+}
+function draw(){
+  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#1c2541');g.addColorStop(.55,'#3a506b');g.addColorStop(1,'#f2a65a');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(255,255,255,.8)';stars.forEach(([x,y,r])=>{ctx.globalAlpha=.4+.3*Math.sin(animT*2+x);ctx.fillRect(x,y,r,r)});ctx.globalAlpha=1;
+  ctx.fillStyle='#f6f1d5';ctx.beginPath();ctx.arc(W*.82,72,26,0,7);ctx.fill();
+  ctx.drawImage(city,0,0);
+  P.forEach((p,i)=>{ctx.fillStyle=i?'rgba(255,143,163,.55)':'rgba(244,208,63,.55)';p.trail.forEach(([x,y])=>ctx.fillRect(x-1.5,y-1.5,3,3))});
+  if(state!=='menu'||cdata){
+    for(let k=0;k<2;k++){if(k===dead)continue;
+      let pose=0;if(dance===k)pose=(animT*5|0)%2?1:2;else if(throwT>0&&thrower===k)pose=k?1:2;
+      drawGor(gor[k],pose);
+      if((state==='aim'||state==='ai')&&k===turn){const y=gor[k].y-66+Math.sin(animT*6)*3;
+        ctx.fillStyle=k?'#ff8fa3':'#f4d03f';ctx.beginPath();ctx.moveTo(gor[k].x-7,y);ctx.lineTo(gor[k].x+7,y);ctx.lineTo(gor[k].x,y+9);ctx.fill()}}
+  }
+  if(state==='aim'){
+    const k=turn,p=P[k],dir=k?-1:1,r=p.angle*Math.PI/180,len=24+p.power*.9,sx=gor[k].x+dir*12,sy=gor[k].y-52;
+    ctx.save();ctx.setLineDash([6,6]);ctx.lineWidth=2.5;ctx.strokeStyle=k?'#ff8fa3':'#f4d03f';
+    line(sx,sy,sx+Math.cos(r)*len*dir,sy-Math.sin(r)*len);ctx.restore();
+  }
+  if(ban){ctx.save();ctx.translate(ban.x,ban.y);ctx.rotate(ban.t*14*(ban.i?-1:1));ctx.strokeStyle='#f4d03f';ctx.lineWidth=4;ctx.lineCap='round';
+    ctx.beginPath();ctx.arc(0,0,7,.4,2.7);ctx.stroke();ctx.fillStyle='#5b4310';ctx.fillRect(-7,-1,2.5,2.5);ctx.restore()}
+  booms.forEach(b=>{const life=b.big?.9:.5,f=b.t/life,r=b.r*(.4+f*.9);
+    ctx.globalAlpha=1-f;ctx.fillStyle='#ff7b2e';ctx.beginPath();ctx.arc(b.x,b.y,r,0,7);ctx.fill();
+    ctx.fillStyle='#ffe066';ctx.beginPath();ctx.arc(b.x,b.y,r*.55,0,7);ctx.fill();ctx.globalAlpha=1});
+  if(toastT>0){ctx.globalAlpha=Math.min(1,toastT*3);ctx.font='700 28px "Roboto Condensed",system-ui,sans-serif';ctx.textAlign='center';
+    ctx.lineWidth=6;ctx.strokeStyle='rgba(0,0,0,.6)';ctx.strokeText(toastTxt,W/2,44);ctx.fillStyle='#fff';ctx.fillText(toastTxt,W/2,44);ctx.globalAlpha=1}
+}
+let lastT=performance.now();
+function loop(t){
+  const dt=Math.min(.05,(t-lastT)/1000);lastT=t;animT+=dt;
+  if(state==='fly'&&ban){const n=Math.max(1,Math.round(dt/DT));
+    for(let s=0;s<n&&ban;s++){const r=adv(ban);if(ban.n%4===0)P[ban.i].trail.push([ban.x,ban.y]);if(r)handle(r)}}
+  throwT=Math.max(0,throwT-dt);if(toastT>0)toastT-=dt;
+  booms=booms.filter(b=>(b.t+=dt)<(b.big?.9:.5));
+  draw();requestAnimationFrame(loop);
+}
+
+// ---------- input ----------
+function adj(key,d){if(state!=='aim')return;const p=P[turn];if(key==='angle')p.angle=clamp(p.angle+d,0,180);else p.power=clamp(p.power+d,1,100);updCtrl()}
+document.querySelectorAll('[data-adj]').forEach(b=>{
+  let t1=null,t2=null;const[k,d]=b.dataset.adj.split(',');
+  const stop=()=>{clearTimeout(t1);clearInterval(t2)};
+  b.addEventListener('pointerdown',e=>{e.preventDefault();adj(k,+d);t1=setTimeout(()=>{t2=setInterval(()=>adj(k,+d),55)},350)});
+  ['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,stop));
+});
+$('throw').addEventListener('click',()=>{if(state==='aim')throwB(turn)});
+let drag=null;
+const toW=e=>{const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)/scale,y:(e.clientY-r.top)/scale}};
+cv.addEventListener('pointerdown',e=>{if(state!=='aim')return;const p=toW(e);drag={x:p.x,y:p.y,moved:false};try{cv.setPointerCapture(e.pointerId)}catch(err){}});
+cv.addEventListener('pointermove',e=>{
+  if(!drag||state!=='aim')return;const p=toW(e),dx=drag.x-p.x,dy=drag.y-p.y,len=Math.hypot(dx,dy);
+  if(len<12)return;drag.moved=true;const dir=turn?-1:1;
+  let a=Math.atan2(-dy,dx*dir)*180/Math.PI;if(a<0)a=a<-90?180:0;
+  P[turn].angle=Math.round(a);P[turn].power=Math.round(clamp(len/2.4,1,100));updCtrl();
+});
+cv.addEventListener('pointerup',()=>{if(drag&&drag.moved&&state==='aim')throwB(turn);drag=null});
+cv.addEventListener('pointercancel',()=>{drag=null});
+addEventListener('keydown',e=>{
+  if(state!=='aim')return;const s=e.shiftKey?5:1;
+  if(e.key==='ArrowUp'){adj('angle',s);e.preventDefault()}else if(e.key==='ArrowDown'){adj('angle',-s);e.preventDefault()}
+  else if(e.key==='ArrowRight'){adj('power',s);e.preventDefault()}else if(e.key==='ArrowLeft'){adj('power',-s);e.preventDefault()}
+  else if(e.key==='Enter'||e.key===' '){throwB(turn);e.preventDefault()}
+});
+
+// ---------- menu ----------
+function seg(id,val,set){const bs=[...$(id).querySelectorAll('button')];const upd=v=>bs.forEach(b=>b.setAttribute('aria-pressed',+b.dataset.v===v));
+  bs.forEach(b=>b.addEventListener('click',()=>{set(+b.dataset.v);upd(+b.dataset.v)}));upd(val)}
+seg('segMode',mode,v=>{mode=v;store.set('gor_mode',v);$('rowDiff').hidden=!!v;updScore()});
+seg('segDiff',diff,v=>{diff=v;store.set('gor_diff',v)});
+seg('segTarget',target,v=>{target=v;store.set('gor_target',v)});
+$('rowDiff').hidden=!!mode;
+$('go').addEventListener('click',startMatch);
+$('menu').addEventListener('click',openMenu);
+
+function setSound(v){sound=v;store.set('gor_sound',v?'1':'0');$('waves').style.display=v?'':'none';$('mute').style.display=v?'none':'';$('snd').setAttribute('aria-label',v?'Ton aus':'Ton an')}
+$('snd').addEventListener('click',()=>setSound(!sound));
+const fsBtn=$('fs'),root=document.documentElement;
+fsBtn.hidden=!(document.fullscreenEnabled||document.webkitFullscreenEnabled)||matchMedia('(display-mode: fullscreen)').matches||matchMedia('(display-mode: standalone)').matches;
+fsBtn.addEventListener('click',async()=>{
+  try{if(document.fullscreenElement)await document.exitFullscreen();
+    else{await (root.requestFullscreen||root.webkitRequestFullscreen).call(root,{navigationUI:'hide'});try{await screen.orientation.lock('landscape')}catch(e){}}
+  }catch(e){fsBtn.hidden=true}
+});
+document.addEventListener('fullscreenchange',fit);
+if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.serviceWorker.register('../sw.js').catch(()=>{})}
+
+setSound(sound);makeCity();updWind();updScore();fit();requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>

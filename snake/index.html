@@ -147,6 +147,7 @@ function newGame(){
 }
 function start(){
   if(ac&&ac.state==='suspended')ac.resume();
+  try{screen.orientation.lock('portrait').catch(()=>{})}catch(e){}
   if(state==='ready'||state==='over')newGame();
   $('msg').hidden=true;state='play';last=performance.now();acc=0;requestAnimationFrame(loop);
 }
