@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#3a1a1f">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Mahjong</title>
+<style>
+/* VOICE: calm, crafted.  IDEA: an ivory-and-jade tile set stacked as the turtle on a lacquered table.
+   PICTURE: the stacked tile turtle with depth.  COLOUR/TYPE: wine lacquer, ivory faces, jade sides, gold accents.
+   LAYOUT: icon row, tile pile fills the screen, pairs left / hint / shuffle below. */
+:root{color-scheme:dark;--bg:#3a1a1f;--ink:#f7efe4;--muted:#d4bfb4;--lib-panel:#4a252b;--lib-edge:#653840;--lib-ink:#f7efe4;--lib-muted:#d4bfb4;--lib-acc:#e3b04b;--lib-acc-ink:#2b1c05}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:radial-gradient(ellipse at 50% 30%,#4d232a,#2b1216);color:var(--ink);font:15px/1.3 system-ui,Roboto,sans-serif;overflow:hidden;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.top{display:flex;gap:8px;padding:8px 10px 4px}
+.stage{flex:1;position:relative;min-height:0;touch-action:manipulation}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px 12px;color:var(--muted);flex-wrap:wrap}
+.foot .btns{display:flex;gap:8px}
+@media (orientation:landscape) and (max-height:560px){
+  body{display:grid;grid-template-columns:minmax(0,1fr) 156px;grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"stage top" "stage ." "stage foot"}
+  .top{grid-area:top;flex-wrap:wrap;justify-content:center;gap:6px}.stage{grid-area:stage}
+  .foot{grid-area:foot;flex-direction:column;align-items:stretch;text-align:center}.foot .btns{flex-direction:column}
+}
+.foot button{white-space:nowrap;font:600 15px system-ui,Roboto,sans-serif;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--lib-edge);background:var(--lib-panel);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="top" id="icons"></div>
+<div class="stage" id="stage"><canvas id="c"></canvas></div>
+<div class="foot"><span id="info"></span><div class="btns"><button id="hint">Tipp</button><button id="shuffle">Mischen</button><button id="again">Neu</button></div></div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d'),stage=$('stage');
+// ---------- layout "Schildkröte" (144 Steine) ----------
+function turtle(){const P=[],add=(x,y,z)=>P.push({x,y,z});
+  [[1,12],[3,10],[2,11],[1,12],[1,12],[2,11],[3,10],[1,12]].forEach(([a,b],y)=>{for(let x=a;x<=b;x++)add(x,y,0)});
+  add(0,3.5,0);add(13,3.5,0);add(14,3.5,0);
+  for(let y=1;y<=6;y++)for(let x=4;x<=9;x++)add(x,y,1);
+  for(let y=2;y<=5;y++)for(let x=5;x<=8;x++)add(x,y,2);
+  for(let y=3;y<=4;y++)for(let x=6;x<=7;x++)add(x,y,3);
+  add(6.5,3.5,4);return P}
+// face: 0-8 Kreise, 9-17 Bambus, 18-26 Zeichen, 27-30 Winde, 31-33 Drachen, 34 Blumen, 35 Jahreszeiten (variant 0-3)
+let tiles=[],sel=null,undo=[],hintPair=null,hintT=0,shake=null,start=0,doneT=0,portrait=false,tw=30,th=40,dep=4,ox=0,oy=0,faceCache={},state='menu';
+let wins=+(L.store.get('mahjong_wins')||0),best=+(L.store.get('mahjong_best')||0);
+const stat=()=>L.store.set('stat_mahjong',`${wins} gelöst`+(best?` · Bestzeit ${fmt(best)}`:''));
+const fmt=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+const alive=()=>tiles.filter(t=>t.alive);
+const match=(a,b)=>a!==b&&a.face===b.face;
+function free(t,list=tiles){
+  for(const o of list)if(o.alive&&o.z===t.z+1&&Math.abs(o.x-t.x)<1&&Math.abs(o.y-t.y)<1)return false;
+  let l=false,r=false;for(const o of list){if(!o.alive||o.z!==t.z||Math.abs(o.y-t.y)>=1)continue;const d=t.x-o.x;if(Math.abs(d-1)<.01)l=true;if(Math.abs(d+1)<.01)r=true}
+  return!(l&&r)}
+function assign(ts){ // solvable assignment: remove random free pairs from the full set and give each pair one face
+  const kinds=[];for(let f=0;f<34;f++)kinds.push([f,0,0],[f,0,0]);kinds.push([34,0,1],[34,2,3],[35,0,1],[35,2,3]);
+  const need=ts.length/2;
+  for(let tries=0;tries<300;tries++){
+    const pool=kinds.slice().sort(()=>Math.random()-.5);
+    // when reshuffling fewer tiles, use the faces of those tiles instead
+    const pairs=ts.every(t=>t.face>=0)?pairsOf(ts):pool.slice(0,need);
+    ts.forEach(t=>t.alive=true);let ok=true;
+    let k=0;for(const p of pairs.sort(()=>Math.random()-.5)){k++;
+      const fr=ts.filter(t=>t.alive&&free(t,ts));if(fr.length<2){ok=false;break}
+      fr.sort((a,b)=>b.z-a.z+Math.random()-.5);
+      const a=fr[Math.floor(Math.random()*Math.min(fr.length,6))];let rest=fr.filter(t=>t!==a&&!(t.z<a.z&&Math.abs(t.x-a.x)<1&&Math.abs(t.y-a.y)<1));
+      if(!rest.length){ok=false;break}const b=rest[Math.floor(Math.random()*rest.length)];
+      a.nf=p[0];a.nv=p[1];b.nf=p[0];b.nv=p[2];a.no=b.no=k;a.alive=b.alive=false}
+    if(ok){ts.forEach(t=>{t.face=t.nf;t.v=t.nv;t.ord=t.no;t.alive=true});return true}
+  }
+  ts.forEach(t=>t.alive=true);return false}
+function pairsOf(ts){const by={};ts.forEach(t=>(by[t.face]=by[t.face]||[]).push(t.v));const out=[];
+  for(const f in by){const vs=by[f];for(let i=0;i+1<vs.length;i+=2)out.push([+f,vs[i],vs[i+1]])}return out}
+function newGame(){
+  const r=stage.getBoundingClientRect();portrait=r.height>r.width*1.15;
+  tiles=turtle().map(p=>portrait?{x:p.y*1,y:p.x,z:p.z}:p);
+  tiles.forEach(t=>{t.alive=true;t.face=-1});assign(tiles);
+  sel=null;undo=[];hintPair=null;start=performance.now();state='play';L.orient(portrait?'portrait':'landscape');fit();info();
+}
+function movesAvail(){const fr=alive().filter(t=>free(t));for(let i=0;i<fr.length;i++)for(let j=i+1;j<fr.length;j++)if(match(fr[i],fr[j]))return[fr[i],fr[j]];return null}
+function info(){const n=alive().length;$('info').textContent=`${n} Steine übrig`+(state==='play'?'':'');}
+function take(a,b){undo.push([a,b]);a.alive=b.alive=false;sel=null;hintPair=null;L.beep(880,.06,'triangle',.05);L.vib(12);info();
+  if(!alive().length){state='won';const s=(performance.now()-start)/1000;wins++;if(!best||s<best)best=s;L.store.set('mahjong_wins',wins);L.store.set('mahjong_best',Math.round(best));stat();
+    L.beep(660,.2,'triangle',.06,1.5);setTimeout(()=>menu.show('Geschafft!',`Alle Steine in ${fmt(s)} abgeräumt. Bestzeit ${fmt(best)}.`,'Neues Spiel'),500);return}
+  if(!movesAvail())setTimeout(()=>{if(state==='play'&&!movesAvail())menu.show('Keine Paare mehr',`Es gibt keinen passenden freien Zug. Mischen verteilt die ${alive().length} Steine neu, sodass es lösbar bleibt.`,'Mischen',false)},400)}
+
+// ---------- drawing ----------
+const NUM='一二三四五六七八九',WIND='東南西北',FLOW=['梅','蘭','菊','竹'],SEAS=['春','夏','秋','冬'];
+const DOT={1:[[.5,.5]],2:[[.5,.28],[.5,.72]],3:[[.27,.24],[.5,.5],[.73,.76]],4:[[.3,.28],[.7,.28],[.3,.72],[.7,.72]],5:[[.3,.25],[.7,.25],[.5,.5],[.3,.75],[.7,.75]],
+  6:[[.3,.2],[.7,.2],[.3,.5],[.7,.5],[.3,.8],[.7,.8]],7:[[.22,.15],[.5,.25],[.78,.35],[.3,.6],[.7,.6],[.3,.84],[.7,.84]],8:[[.3,.14],[.7,.14],[.3,.38],[.7,.38],[.3,.62],[.7,.62],[.3,.86],[.7,.86]],
+  9:[[.22,.2],[.5,.2],[.78,.2],[.22,.5],[.5,.5],[.78,.5],[.22,.8],[.5,.8],[.78,.8]]};
+function faceImg(f,v){const key=f+'_'+v;if(faceCache[key])return faceCache[key];
+  const dpr=window.devicePixelRatio||1,c=document.createElement('canvas');c.width=Math.ceil(tw*dpr);c.height=Math.ceil(th*dpr);const g=c.getContext('2d');g.scale(dpr,dpr);
+  const w=tw,h=th,pw=w*.84,ph=h*.86,px=(w-pw)/2,py=(h-ph)/2;g.textAlign='center';g.textBaseline='middle';
+  const font=(s,col,y,weight=700)=>{g.font=`${weight} ${s}px "Noto Serif CJK SC","Noto Sans CJK SC",serif`;g.fillStyle=col;return y};
+  if(f<9){const n=f+1,R=n===1?pw*.36:n<=4?pw*.17:n<=6?pw*.14:pw*.12;
+    DOT[n].forEach(([x,y],i)=>{const cx=px+x*pw,cy=py+y*ph,col=n===1?'#b3262d':['#1f5fa8','#2a8a4a','#b3262d'][(i+n)%3];
+      g.fillStyle=col;g.beginPath();g.arc(cx,cy,R,0,7);g.fill();g.fillStyle='#fbf6ea';g.beginPath();g.arc(cx,cy,R*.5,0,7);g.fill();g.fillStyle=col;g.beginPath();g.arc(cx,cy,R*.22,0,7);g.fill()})}
+  else if(f<18){const n=f-8;
+    if(n===1){g.fillStyle='#2a8a4a';g.beginPath();g.ellipse(w/2,h*.55,pw*.28,ph*.3,0,0,7);g.fill();g.fillStyle='#b3262d';g.beginPath();g.moveTo(w/2,h*.18);g.lineTo(w/2+pw*.18,h*.32);g.lineTo(w/2,h*.34);g.fill();
+      g.fillStyle='#fbf6ea';g.beginPath();g.arc(w/2+pw*.08,h*.45,pw*.05,0,7);g.fill()}
+    else{const sw=pw*.13,sh=n<=3?ph*.7:n<=6?ph*.36:ph*.26;
+      DOT[n].forEach(([x,y],i)=>{const cx=px+x*pw,cy=py+y*ph,col=(n===5||n===7||n===9)&&i===Math.floor(DOT[n].length/2)?'#b3262d':'#2a8a4a';
+        g.fillStyle=col;g.beginPath();g.roundRect?g.roundRect(cx-sw/2,cy-sh/2,sw,sh,sw/2):g.rect(cx-sw/2,cy-sh/2,sw,sh);g.fill();g.fillStyle='rgba(255,255,255,.5)';g.fillRect(cx-sw*.1,cy-sh*.4,sw*.2,sh*.8)})}}
+  else if(f<27){font(ph*.36,'#1d1d1d');g.fillText(NUM[f-18],w/2,py+ph*.27);font(ph*.42,'#b3262d');g.fillText('萬',w/2,py+ph*.7)}
+  else if(f<31){font(ph*.6,'#1d1d1d');g.fillText(WIND[f-27],w/2,h/2+1)}
+  else if(f===31){font(ph*.62,'#b3262d');g.fillText('中',w/2,h/2+1)}
+  else if(f===32){font(ph*.62,'#2a8a4a');g.fillText('發',w/2,h/2+1)}
+  else if(f===33){g.strokeStyle='#1f5fa8';g.lineWidth=pw*.07;g.strokeRect(px+pw*.18,py+ph*.15,pw*.64,ph*.7)}
+  else{const ch=(f===34?FLOW:SEAS)[v];font(ph*.5,f===34?'#2a8a4a':'#c26a1a');g.fillText(ch,w/2,h*.44);
+    g.fillStyle=f===34?'#2a8a4a':'#c26a1a';g.font=`600 ${ph*.16}px system-ui`;g.fillText(f===34?'Blume':'Zeit',w/2,h*.83)}
+  return faceCache[key]=c}
+function fit(){const r=stage.getBoundingClientRect(),dpr=window.devicePixelRatio||1;cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(!tiles.length)return;const maxX=Math.max(...tiles.map(t=>t.x))+1,maxY=Math.max(...tiles.map(t=>t.y))+1;
+  // tile aspect ~0.75; depth per layer ~ 0.12 of tile width
+  const s=Math.min((r.width-12)/(maxX*.75+.6),(r.height-12)/(maxY+.45));tw=s*.75;th=s;dep=tw*.13;
+  ox=(r.width-maxX*tw)/2+dep*2;oy=(r.height-maxY*th)/2+dep*2;faceCache={}}
+new ResizeObserver(fit).observe(stage);
+const pos=t=>[ox+t.x*tw-t.z*dep,oy+t.y*th-t.z*dep];
+function draw(){const r=stage.getBoundingClientRect();ctx.clearRect(0,0,r.width,r.height);
+  const order=alive().sort((a,b)=>a.z-b.z||(a.x+a.y)-(b.x+b.y));const fr=new Set(order.filter(t=>free(t)));
+  for(const t of order){let[x,y]=pos(t);if(shake&&shake.t===t)x+=Math.sin(shake.k*40)*3;
+    ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(x+dep*1.6,y+dep*1.6,tw,th);
+    ctx.fillStyle='#2f7d64';ctx.beginPath();ctx.roundRect?ctx.roundRect(x+dep*.2,y+dep*.2,tw,th,tw*.1):ctx.rect(x,y,tw,th);ctx.fill();
+    ctx.fillStyle='#e9dcc4';ctx.beginPath();ctx.roundRect?ctx.roundRect(x+dep*.1,y+dep*.1,tw-dep*.1,th-dep*.1,tw*.1):ctx.rect(x,y,tw,th);ctx.fill();
+    ctx.fillStyle=t===sel?'#ffe7a3':'#fbf6ea';ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y,tw-dep*.3,th-dep*.3,tw*.1):ctx.rect(x,y,tw,th);ctx.fill();
+    ctx.drawImage(faceImg(t.face,t.v),x,y,tw-dep*.3,th-dep*.3);
+    if(t===sel||(hintPair&&hintPair.includes(t)&&hintT>0)){ctx.strokeStyle=t===sel?'#e3b04b':'#46c2ff';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect?ctx.roundRect(x+1,y+1,tw-dep*.3-2,th-dep*.3-2,tw*.1):ctx.rect(x,y,tw,th);ctx.stroke()}
+    else if(!fr.has(t)){ctx.fillStyle='rgba(40,20,10,.13)';ctx.fillRect(x,y,tw-dep*.3,th-dep*.3)}
+  }}
+let last=performance.now();
+(function loop(ts){const dt=Math.min(.05,(ts-last)/1000);last=ts;if(hintT>0)hintT-=dt;if(shake){shake.k+=dt;if(shake.k>.25)shake=null}
+  if(tiles.length)draw();if(state==='play'){const tx=`${alive().length} Steine · ${fmt((performance.now()-start)/1000)}`;if($('info').textContent!==tx)$('info').textContent=tx}
+  requestAnimationFrame(loop)})(performance.now());
+
+// ---------- input ----------
+cv.addEventListener('click',e=>{if(state!=='play')return;L.resume();const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const order=alive().sort((a,b)=>b.z-a.z||(b.x+b.y)-(a.x+a.y));const t=order.find(t=>{const[x,y]=pos(t);return mx>=x&&mx<=x+tw&&my>=y&&my<=y+th});
+  if(!t){sel=null;return}
+  if(!free(t)){shake={t,k:0};L.beep(160,.05,'square',.03);return}
+  if(sel&&match(sel,t)){take(sel,t);return}
+  sel=sel===t?null:t;L.beep(700,.03,'sine',.03)});
+$('hint').onclick=()=>{if(state!=='play')return;const p=movesAvail();if(p){hintPair=p;hintT=2}else L.beep(200,.1,'square',.04)};
+function reshuffle(){const ts=alive();ts.forEach(t=>t.face=t.face);assign(ts);sel=null;hintPair=null;undo=[];L.noise(.25,.15)}
+$('shuffle').onclick=()=>{if(state==='play')reshuffle()};
+$('again').onclick=()=>newGame();
+
+const menu=L.menu({prefix:'mahjong_',title:'Mahjong',
+  text:'Räum alle Steine paarweise ab. Ein Stein ist frei, wenn nichts auf ihm liegt und links oder rechts kein Nachbar ist. Gleiche Steine passen zusammen, jede Blume zu jeder Blume, jede Jahreszeit zu jeder Jahreszeit. Jede Partie ist lösbar.',
+  onStart:()=>{if(state==='play'&&!movesAvail()&&alive().length){reshuffle();return}if(state!=='play')newGame()}});
+L.icons($('icons'),{onMenu:()=>{menu.show('Mahjong',`${wins} Partien gelöst`+(best?`, Bestzeit ${fmt(best)}.`:'.'),state==='play'?'Weiterspielen':'Spiel starten',false)},
+  onUndo:()=>{if(state!=='play'||!undo.length)return;const[a,b]=undo.pop();a.alive=b.alive=true;sel=null;info()}});
+stat();
+}
+</script>
+</body>
+</html>

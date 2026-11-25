@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#211e1d">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Blöcke</title>
+<style>
+/* VOICE: brisk, toy-like.  IDEA: painted wooden toy blocks falling into a slotted box.
+   PICTURE: the well with bevelled blocks and a faint ghost.  COLOUR/TYPE: charcoal box, seven toy paints; condensed numbers.
+   LAYOUT: icons, stats + next/hold, well centred, big control keys at the bottom. */
+:root{color-scheme:dark;--bg:#211e1d;--ink:#f5efe8;--muted:#b3aaa2;--well:#151312;--key:#34302e;--lib-panel:#2e2a28;--lib-edge:#45403c;--lib-ink:#f5efe8;--lib-muted:#b3aaa2;--lib-acc:#f2b84b;--lib-acc-ink:#2a1d06}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.3 system-ui,Roboto,sans-serif;overflow:hidden;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.top{display:flex;gap:8px;padding:8px 10px 4px;max-width:560px;width:100%;margin:0 auto}
+.mid{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:8px 6px;padding:4px 10px;max-width:560px;width:100%;margin:0 auto}
+.side{display:flex;gap:6px}.side>*{flex:1 1 0}
+.wellwrap{grid-column:1/-1;grid-row:2}.side:last-child{grid-row:1;grid-column:2}
+.box{background:var(--lib-panel);border-radius:10px;padding:5px 2px;text-align:center}
+.box small{display:block;color:var(--muted);font-size:12px}
+.box b{font:700 20px/1.1 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;font-variant-numeric:tabular-nums}
+.box canvas{display:block;margin:2px auto 0;width:100%;max-width:60px;height:30px;object-fit:contain}
+button.box{border:0;color:inherit;font:inherit;cursor:pointer}
+.wellwrap{flex:1;position:relative;min-height:0;touch-action:none}
+#c{position:absolute;display:block;touch-action:none;border-radius:6px;background:var(--well);box-shadow:inset 0 0 0 2px #3a3532}
+.keys{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:6px 10px 12px;max-width:560px;width:100%;margin:0 auto}
+.keys button{min-height:58px;border-radius:12px;border:0;background:var(--key);color:var(--ink);box-shadow:0 3px 0 #141211;display:grid;place-items:center;touch-action:manipulation}
+.keys button:active{transform:translateY(2px);box-shadow:0 1px 0 #141211}
+.keys svg{width:28px;height:28px}
+</style>
+</head>
+<body>
+<div class="top" id="icons"></div>
+<div class="mid">
+  <div class="side">
+    <button class="box" id="holdBtn" aria-label="Stein zurücklegen"><small>Halten</small><canvas id="hold" width="120" height="88"></canvas></button>
+    <div class="box"><small>Punkte</small><b id="score">0</b></div>
+    <div class="box"><small>Rekord</small><b id="hi">0</b></div>
+  </div>
+  <div class="wellwrap" id="wrap"><canvas id="c"></canvas></div>
+  <div class="side">
+    <div class="box"><small>Nächster</small><canvas id="next" width="120" height="88"></canvas></div>
+    <div class="box"><small>Level</small><b id="lvl">1</b></div>
+    <div class="box"><small>Reihen</small><b id="lines">0</b></div>
+  </div>
+</div>
+<div class="keys">
+  <button data-k="left" aria-label="Links"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 5l-8 7 8 7z"/></svg></button>
+  <button data-k="rot" aria-label="Drehen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M19 12a7 7 0 1 1-2.1-5"/><path d="M19 4v4h-4"/></svg></button>
+  <button data-k="soft" aria-label="Schneller"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 9l7 8 7-8z"/></svg></button>
+  <button data-k="hard" aria-label="Fallen lassen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5l7 7 7-7zM5 12l7 7 7-7z"/></svg></button>
+  <button data-k="right" aria-label="Rechts"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 5l8 7-8 7z"/></svg></button>
+</div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d'),wrap=$('wrap');
+const COLS=10,ROWS=20;
+const SH={I:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],O:[[1,1],[1,1]],T:[[0,1,0],[1,1,1],[0,0,0]],S:[[0,1,1],[1,1,0],[0,0,0]],Z:[[1,1,0],[0,1,1],[0,0,0]],J:[[1,0,0],[1,1,1],[0,0,0]],L:[[0,0,1],[1,1,1],[0,0,0]]};
+const PAINT={I:'#e76f51',O:'#f4c95d',T:'#8ab17d',S:'#5fa8d3',Z:'#c77dba',J:'#f4a261',L:'#4fb3a9'};
+const rot=m=>m[0].map((_,i)=>m.map(r=>r[i]).reverse());
+let grid,cur,nextK,holdK,canHold,bag=[],score=0,lines=0,level=1,startLvl=1,state='menu',fallT=0,lockT=0,lockMoves=0,flash=null,cs=24;
+let hi=+(L.store.get('bloecke_hi')||0);
+function draw7(){if(!bag.length)bag=Object.keys(SH).sort(()=>Math.random()-.5);return bag.pop()}
+function spawn(k){const m=SH[k].map(r=>r.slice());return{k,m,x:Math.floor((COLS-m[0].length)/2),y:k==='I'?-1:0}}
+function fits(m,x,y){for(let r=0;r<m.length;r++)for(let c=0;c<m[r].length;c++)if(m[r][c]){const gx=x+c,gy=y+r;if(gx<0||gx>=COLS||gy>=ROWS)return false;if(gy>=0&&grid[gy][gx])return false}return true}
+function ui(){$('score').textContent=score;$('lvl').textContent=level;$('lines').textContent=lines;$('hi').textContent=hi;mini($('next'),nextK);mini($('hold'),holdK)}
+function newGame(){grid=Array.from({length:ROWS},()=>Array(COLS).fill(null));bag=[];score=0;lines=0;level=startLvl;holdK=null;canHold=true;nextK=draw7();
+  cur=spawn(draw7());state='play';fallT=0;L.orient('portrait');ui()}
+const interval=()=>Math.max(.05,.8*Math.pow(.85,level-1));
+function move(dx){if(state!=='play')return;if(fits(cur.m,cur.x+dx,cur.y)){cur.x+=dx;touchLock();L.beep(330,.02,'square',.02)}}
+function touchLock(){if(lockT>0&&lockMoves<15){lockT=0;lockMoves++}}
+function rotate(){if(state!=='play')return;const m=rot(cur.m);for(const[dx,dy]of[[0,0],[-1,0],[1,0],[-2,0],[2,0],[0,-1]])if(fits(m,cur.x+dx,cur.y+dy)){cur.m=m;cur.x+=dx;cur.y+=dy;touchLock();L.beep(600,.03,'triangle',.03);return}}
+function soft(){if(state!=='play')return;if(fits(cur.m,cur.x,cur.y+1)){cur.y++;score+=1;fallT=0;ui()}}
+function hard(){if(state!=='play')return;let n=0;while(fits(cur.m,cur.x,cur.y+1)){cur.y++;n++}score+=n*2;L.vib(15);lock()}
+function hold(){if(state!=='play'||!canHold)return;const k=cur.k;if(holdK){cur=spawn(holdK)}else{cur=spawn(nextK);nextK=draw7()}holdK=k;canHold=false;ui()}
+function lock(){
+  for(let r=0;r<cur.m.length;r++)for(let c=0;c<cur.m[r].length;c++)if(cur.m[r][c]){const gy=cur.y+r;if(gy<0){return gameOver()}grid[gy][cur.x+c]=cur.k}
+  L.beep(160,.06,'square',.05);
+  const full=[];for(let r=0;r<ROWS;r++)if(grid[r].every(v=>v))full.push(r);
+  if(full.length){flash={rows:full,t:.18};L.beep(500+full.length*150,.15,'triangle',.06,1.5);if(full.length===4)L.vib([30,30,60])}
+  else nextPiece();
+}
+function clearRows(){
+  const rows=flash.rows;flash=null;rows.forEach(r=>{grid.splice(r,1);grid.unshift(Array(COLS).fill(null))});
+  lines+=rows.length;score+=[0,100,300,500,800][rows.length]*level;level=Math.max(level,startLvl+Math.floor(lines/10));nextPiece();
+}
+function nextPiece(){cur=spawn(nextK);nextK=draw7();canHold=true;lockT=0;lockMoves=0;fallT=0;if(!fits(cur.m,cur.x,cur.y))return gameOver();ui()}
+function gameOver(){state='over';L.noise(.5,.25);const rec=score>hi;if(rec){hi=score;L.store.set('bloecke_hi',hi)}L.store.set('stat_bloecke',`Rekord ${hi} Punkte`);ui();
+  menu.show(rec?'Neuer Rekord!':'Game Over',`${score} Punkte, ${lines} Reihen, Level ${level}.`,'Noch mal')}
+
+// ---------- drawing ----------
+function fit(){const r=wrap.getBoundingClientRect(),dpr=window.devicePixelRatio||1;cs=Math.floor(Math.min(r.width/COLS,r.height/ROWS));
+  const w=cs*COLS,h=cs*ROWS;cv.style.width=w+'px';cv.style.height=h+'px';cv.style.left=(r.width-w)/2+'px';cv.style.top=(r.height-h)/2+'px';
+  cv.width=w*dpr;cv.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+new ResizeObserver(fit).observe(wrap);
+function block(g,x,y,s,col,a=1){g.globalAlpha=a;g.fillStyle=col;g.fillRect(x+1,y+1,s-2,s-2);
+  g.fillStyle='rgba(255,255,255,.28)';g.fillRect(x+1,y+1,s-2,s*.18);g.fillRect(x+1,y+1,s*.16,s-2);
+  g.fillStyle='rgba(0,0,0,.25)';g.fillRect(x+1,y+s*.82-1,s-2,s*.18);g.fillRect(x+s*.84-1,y+1,s*.16,s-2);g.globalAlpha=1}
+function mini(c,k){const g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);if(!k)return;const m=SH[k],s=24;
+  const rows=m.filter(r=>r.some(v=>v)),w=m[0].length;let minC=w,maxC=0;m.forEach(r=>r.forEach((v,i)=>{if(v){minC=Math.min(minC,i);maxC=Math.max(maxC,i)}}));
+  const ox=(c.width-(maxC-minC+1)*s)/2,oy=(c.height-rows.length*s)/2;rows.forEach((r,ri)=>r.forEach((v,i)=>{if(v)block(g,ox+(i-minC)*s,oy+ri*s,s,PAINT[k])}))}
+function draw(){
+  const w=cs*COLS,h=cs*ROWS;ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='rgba(255,255,255,.04)';ctx.lineWidth=1;for(let c=1;c<COLS;c++){ctx.beginPath();ctx.moveTo(c*cs+.5,0);ctx.lineTo(c*cs+.5,h);ctx.stroke()}
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(grid&&grid[r][c]){const fl=flash&&flash.rows.includes(r);block(ctx,c*cs,r*cs,cs,fl?'#fff8e8':PAINT[grid[r][c]])}
+  if(state==='play'&&cur&&!flash){let gy=cur.y;while(fits(cur.m,cur.x,gy+1))gy++;
+    cur.m.forEach((row,r)=>row.forEach((v,c)=>{if(v&&gy+r>=0){ctx.strokeStyle=PAINT[cur.k];ctx.globalAlpha=.55;ctx.lineWidth=2;ctx.strokeRect((cur.x+c)*cs+2,(gy+r)*cs+2,cs-4,cs-4);ctx.globalAlpha=1}}));
+    cur.m.forEach((row,r)=>row.forEach((v,c)=>{if(v&&cur.y+r>=0)block(ctx,(cur.x+c)*cs,(cur.y+r)*cs,cs,PAINT[cur.k])}))}
+}
+let last=performance.now();
+function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;
+  if(state==='play'){
+    if(flash){flash.t-=dt;if(flash.t<=0)clearRows()}
+    else if(fits(cur.m,cur.x,cur.y+1)){lockT=0;fallT+=dt;if(fallT>=interval()){fallT=0;cur.y++}}
+    else{lockT+=dt;if(lockT>.5)lock()}
+  }
+  draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+
+// ---------- input ----------
+const ACT={left:()=>move(-1),right:()=>move(1),rot:rotate,soft:soft,hard:hard};
+document.querySelectorAll('.keys button').forEach(b=>{let t1,t2;const k=b.dataset.k,stop=()=>{clearTimeout(t1);clearInterval(t2)};
+  b.addEventListener('pointerdown',e=>{e.preventDefault();L.resume();ACT[k]();if(k!=='rot'&&k!=='hard')t1=setTimeout(()=>{t2=setInterval(ACT[k],k==='soft'?40:70)},170)});
+  ['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,stop))});
+$('holdBtn').onclick=hold;
+let sw=null;
+cv.addEventListener('pointerdown',e=>{sw={x:e.clientX,y:e.clientY,t:performance.now(),mx:0,my:0}});
+cv.addEventListener('pointermove',e=>{if(!sw)return;const dx=e.clientX-sw.x-sw.mx*cs,dy=e.clientY-sw.y-sw.my*cs;
+  if(Math.abs(dx)>cs*.9){const s=Math.sign(dx);move(s);sw.mx+=s;sw.moved=true}
+  if(dy>cs*.9){soft();sw.my++;sw.moved=true}});
+cv.addEventListener('pointerup',e=>{if(!sw)return;const dt=performance.now()-sw.t,dy=e.clientY-sw.y;
+  if(!sw.moved&&dt<300)rotate();else if(dy>cs*3&&dt<250)hard();sw=null});
+addEventListener('keydown',e=>{const m={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'rot',ArrowDown:'soft',' ':'hard'}[e.key];
+  if(m){e.preventDefault();ACT[m]()}else if(e.key==='c'||e.key==='C'||e.key==='Shift')hold()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='play'){state='pause';menu.show('Pause',`${score} Punkte, Level ${level}.`,'Weiter',false)}});
+
+const menu=L.menu({prefix:'bloecke_',title:'Blöcke',
+  text:'Dreh und schieb die fallenden Blöcke so, dass volle Reihen entstehen. Antippen dreht, Wischen schiebt, schnell nach unten wischen lässt fallen.',
+  rows:[{key:'lvl',label:'Startlevel',opts:[['1',1],['3',3],['5',5],['8',8]],def:1}],
+  onStart:s=>{if(state==='pause'){state='play';return}startLvl=s.lvl;newGame()}});
+L.icons($('icons'),{onMenu:()=>{if(state==='play'){state='pause';menu.show('Pause',`${score} Punkte, Level ${level}.`,'Weiter',false)}else menu.show()},orient:'portrait'});
+L.store.set('stat_bloecke',`Rekord ${hi} Punkte`);ui();fit();
+}
+</script>
+</body>
+</html>

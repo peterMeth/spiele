@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#8ec5e8">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Bauwelt</title>
+<style>
+/* VOICE: curious, cosy, hands-on.  IDEA: a side-cut through a little pixel landscape you can dig and build in.
+   PICTURE: the world itself with sky, hills, caves and the explorer.  COLOUR/TYPE: sky blue to night navy, earthy blocks; system type.
+   LAYOUT: world full-screen, icons top-left, walk pad bottom-left, jump bottom-right, hotbar + mode + workbench bottom centre. */
+:root{color-scheme:dark;--lib-panel:rgba(30,32,38,.72);--lib-edge:rgba(255,255,255,.18);--lib-ink:#fff;--lib-muted:#cfd3da;--lib-acc:#7cc35a;--lib-acc-ink:#10230a}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;background:#000;color:#fff;font:15px/1.3 system-ui,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;image-rendering:pixelated}
+.tl{position:fixed;left:calc(8px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));display:flex;gap:6px;z-index:3}
+.pad{position:fixed;bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;z-index:3}
+.pad.l{left:calc(10px + env(safe-area-inset-left))}.pad.r{right:calc(10px + env(safe-area-inset-right))}
+.pad button,.bar>button{width:64px;height:64px;border-radius:16px;border:1px solid rgba(255,255,255,.22);background:rgba(25,27,32,.55);color:#fff;display:grid;place-items:center;touch-action:none}
+.pad button:active,.pad button.on{background:rgba(255,255,255,.3)}
+.pad svg,.bar svg{width:30px;height:30px}
+.bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:6px;align-items:flex-end;z-index:3;max-width:calc(100vw - 180px)}
+.bar>button{width:52px;height:52px;flex:none}
+.bar>button.build{background:rgba(124,195,90,.6)}
+#hot{display:flex;gap:4px;overflow-x:auto;padding:4px;border-radius:12px;background:rgba(25,27,32,.55);scrollbar-width:none}
+#hot button{position:relative;width:44px;height:44px;flex:none;border-radius:8px;border:2px solid transparent;background:rgba(255,255,255,.08);padding:4px}
+#hot button.sel{border-color:#ffe066}
+#hot canvas{position:static;width:100%;height:100%}
+#hot b{position:absolute;right:2px;bottom:0;font-size:12px;text-shadow:0 1px 2px #000}
+#hot .empty{color:#cfd3da;font-size:12px;padding:12px 8px;white-space:nowrap}
+.panel{position:fixed;inset:0;z-index:10;display:flex;align-items:safe center;justify-content:center;background:rgba(0,0,0,.5);padding:14px;overflow:auto}
+.panel[hidden]{display:none}
+.card{background:#24262c;border-radius:14px;padding:16px 18px;width:min(420px,100%);margin:auto}
+.card h2{margin:0 0 8px;font:700 26px/1.1 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui}
+.rec{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #34373f}
+.rec small{display:block;color:#aab0ba}
+.rec button,.card>button{font:600 15px system-ui,Roboto,sans-serif;min-height:44px;padding:0 14px;border-radius:10px;border:0;background:#7cc35a;color:#10230a}
+.rec button:disabled{background:#3a3d45;color:#8a8f98}
+.card>button{width:100%;margin-top:10px;background:#3a3d45;color:#fff}
+.toast{position:fixed;left:50%;top:calc(66px + env(safe-area-inset-top));transform:translateX(-50%);background:rgba(20,22,26,.8);padding:6px 14px;border-radius:20px;z-index:4;pointer-events:none;transition:opacity .3s}
+@media (orientation:portrait){.bar{bottom:calc(86px + env(safe-area-inset-bottom));max-width:calc(100vw - 20px)}}
+@media (max-height:420px){.pad button{width:56px;height:56px}.bar>button{width:46px;height:46px}#hot button{width:40px;height:40px}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="tl" id="icons"></div>
+<div class="toast" id="toast" style="opacity:0"></div>
+<div class="pad l"><button data-k="l" aria-label="Links"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 5l-8 7 8 7z"/></svg></button><button data-k="r" aria-label="Rechts"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 5l8 7-8 7z"/></svg></button></div>
+<div class="pad r"><button data-k="j" aria-label="Springen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 15l7-8 7 8z"/></svg></button></div>
+<div class="bar">
+  <button id="mode" aria-label="Modus wechseln"></button>
+  <div id="hot"></div>
+  <button id="craftBtn" aria-label="Werkbank"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 9h18v4H3zM6 13v7M18 13v7M8 9V5h8v4"/></svg></button>
+</div>
+<div class="panel" id="craft" hidden><div class="card"><h2>Werkbank</h2><div id="recipes"></div><button id="craftClose">Schließen</button></div></div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d');
+const W=320,H=80,SEA=36,REACH=5;
+// Blöcke
+const B={AIR:0,GRASS:1,DIRT:2,STONE:3,WOOD:4,LEAVES:5,SAND:6,WATER:7,COAL:8,IRON:9,PLANK:10,GLASS:11,BRICK:12,BEDROCK:13,GOLD:14};
+const NAME=['Luft','Gras','Erde','Stein','Holz','Laub','Sand','Wasser','Kohle','Eisen','Bretter','Glas','Ziegel','Grundgestein','Gold'];
+const HARD=[0,.45,.45,1.4,.9,.2,.35,0,1.6,2.2,.7,.3,1.5,Infinity,2.2];
+const DROP={1:2};// Gras wird zu Erde
+const ORDER=[2,3,6,4,10,5,11,12,8,9,14];
+const solid=id=>id!==0&&id!==7;
+let surf=[],world,seed,player,inv,tool=0,dayT=.3,mode='break',selId=2,tex=[],ts=32,camX=0,camY=0,keys={},brk=null,ptr=null,state='menu',saveT=0;
+
+// ---------- noise ----------
+const hash=(x,y,s)=>{let h=Math.imul(x,374761393)+Math.imul(y,668265263)+Math.imul(s,982451653)|0;h=Math.imul(h^h>>>13,1274126177);return((h^h>>>16)>>>0)/4294967296};
+const sm=t=>t*t*(3-2*t);
+function vn(x,y,s){const xi=Math.floor(x),yi=Math.floor(y),u=sm(x-xi),v=sm(y-yi),a=hash(xi,yi,s),b=hash(xi+1,yi,s),c=hash(xi,yi+1,s),d=hash(xi+1,yi+1,s);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v}
+const at=(x,y)=>x<0||x>=W||y<0?0:y>=H?13:world[y*W+x];
+const set=(x,y,v)=>{if(x>=0&&x<W&&y>=0&&y<H)world[y*W+x]=v};
+
+function generate(s){
+  seed=s;world=new Uint8Array(W*H);const hs=surf=[];
+  for(let x=0;x<W;x++){const h=Math.round(30+(vn(x/42,0,s)-.5)*24+(vn(x/11,3,s)-.5)*6);hs.push(h);
+    const dirt=3+Math.floor(hash(x,0,s+1)*3);
+    for(let y=0;y<H;y++){let v=0;
+      if(y>=H-1||(y>=H-3&&hash(x,y,s+9)<.5))v=13;
+      else if(y<h)v=y>=SEA?7:0;
+      else if(y===h)v=h>=SEA-1?6:1;
+      else if(y<h+dirt)v=h>=SEA-1&&y<h+3?6:2;
+      else{v=3;const r=hash(x,y,s+3);if(r<.05&&y>h+3)v=8;else if(r<.075&&y>h+12)v=9;else if(r<.083&&y>h+24)v=14;
+        if(y>h+5&&vn(x/9,y/6,s+7)>.66)v=0}
+      world[y*W+x]=v}}
+  for(let x=3;x<W-3;x++){const h=hs[x];if(world[h*W+x]!==1||hash(x,1,s+5)>.09)continue;if(hs[x-1]!==h&&hs[x+1]!==h)continue;
+    const th=4+Math.floor(hash(x,2,s)*3);for(let i=1;i<=th;i++)set(x,h-i,4);
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){if(Math.abs(dx)+Math.abs(dy)>3)continue;if(at(x+dx,h-th-dy)===0)set(x+dx,h-th-dy,5)}x+=4}
+  let sx=Math.floor(W/2);const top=x=>{let y=0;while(y<H&&at(x,y)===0)y++;return y};
+  for(let d=0;d<W/2;d++){const c=[sx+d,sx-d].find(x=>x>0&&x<W-1&&[1,2,6].includes(at(x,top(x)))&&[1,2,6].includes(at(x+1,top(x+1))));if(c){sx=c;break}}
+  const sy=top(sx);
+  player={x:sx+.15,y:sy-1.8,vx:0,vy:0,w:.7,h:1.7,face:1,ground:false,walk:0};
+  inv={};tool=0;dayT=.08;
+}
+
+// ---------- textures (16x16 pixel art, procedurally painted) ----------
+function shade(hex,f){const n=parseInt(hex.slice(1),16);let r=n>>16,g=n>>8&255,b=n&255;const k=f<0?0:255,a=Math.abs(f);r=Math.round(r+(k-r)*a);g=Math.round(g+(k-g)*a);b=Math.round(b+(k-b)*a);return`rgb(${r},${g},${b})`}
+function makeTex(id){const c=document.createElement('canvas');c.width=c.height=16;const g=c.getContext('2d');let s=id*7919;
+  const R=()=>{s=(s*16807)%2147483647;return s/2147483647};const px=(x,y,col)=>{g.fillStyle=col;g.fillRect(x,y,1,1)};
+  const base={1:'#7a5434',2:'#7a5434',3:'#82858c',4:'#7a5230',5:'#3f8f3b',6:'#dccb8c',7:'#3b7bd0',8:'#82858c',9:'#82858c',10:'#b98a52',11:'#cfe9f5',12:'#a2503d',13:'#2d2d31',14:'#82858c'}[id];
+  for(let y=0;y<16;y++)for(let x=0;x<16;x++)px(x,y,shade(base,(R()-.5)*.22));
+  if(id===1){for(let x=0;x<16;x++){const d=3+Math.floor(R()*3);for(let y=0;y<d;y++)px(x,y,shade('#5fae3f',(R()-.5)*.2))}}
+  if(id===4)for(let y=0;y<16;y++){px(3,y,shade('#5e3d22',R()*.1));px(8,y,shade('#5e3d22',R()*.1));px(12,y,shade('#5e3d22',R()*.1))}
+  if(id===5)for(let i=0;i<22;i++)px(Math.floor(R()*16),Math.floor(R()*16),'#2c6b2a');
+  if(id===8||id===9||id===14){const col={8:'#1e1e22',9:'#d9ae8e',14:'#f4cf45'}[id];for(let i=0;i<5;i++){const x=1+Math.floor(R()*13),y=1+Math.floor(R()*13);px(x,y,col);px(x+1,y,col);px(x,y+1,col);if(R()<.6)px(x+1,y+1,col)}}
+  if(id===10)for(let y=0;y<16;y++)for(let x=0;x<16;x++){if(y%4===3)px(x,y,'#8a6234');if(y%4!==3&&x===((Math.floor(y/4)%2)?4:11))px(x,y,'#8a6234')}
+  if(id===11){g.clearRect(0,0,16,16);g.fillStyle='rgba(207,233,245,.25)';g.fillRect(0,0,16,16);g.fillStyle='#e8f6fc';g.fillRect(0,0,16,1);g.fillRect(0,15,16,1);g.fillRect(0,0,1,16);g.fillRect(15,0,1,16);px(4,3,'#fff');px(5,4,'#fff');px(6,5,'#fff')}
+  if(id===12)for(let y=0;y<16;y++)for(let x=0;x<16;x++){if(y%4===3||x===((Math.floor(y/4)%2)?3:11))px(x,y,'#d8ccbd')}
+  if(id===7){g.clearRect(0,0,16,16);g.fillStyle='rgba(59,123,208,.72)';g.fillRect(0,0,16,16);g.fillStyle='rgba(150,200,255,.5)';for(let x=0;x<16;x+=4)g.fillRect(x+((x/4)%2)*2,2,2,1)}
+  return c}
+
+// ---------- player sprite ----------
+function drawPlayer(){const p=player,x=(p.x-camX)*ts,y=(p.y-camY)*ts,w=p.w*ts,h=p.h*ts,f=p.face,sw=Math.sin(p.walk*10)*(p.ground&&Math.abs(p.vx)>.1?1:0);
+  ctx.save();ctx.translate(x+w/2,y);ctx.scale(f,1);const u=w/7;
+  ctx.fillStyle='#2f4f7a';ctx.fillRect(-2*u+sw*u,h*.68,1.8*u,h*.32);ctx.fillRect(.2*u-sw*u,h*.68,1.8*u,h*.32);// legs
+  ctx.fillStyle='#3e8a6e';ctx.fillRect(-2.5*u,h*.34,5*u,h*.36);// jacket
+  ctx.fillStyle='#2f6e57';ctx.fillRect(-.6*u-sw*u*.6,h*.36,1.6*u,h*.3);// arm
+  ctx.fillStyle='#e8b98f';ctx.fillRect(-2.2*u,h*.07,4.4*u,h*.28);// head
+  ctx.fillStyle='#e0702e';ctx.fillRect(-2.4*u,0,4.8*u,h*.12);ctx.fillRect(-2.4*u,h*.1,1.2*u,h*.08);// beanie
+  ctx.fillStyle='#1d1d1d';ctx.fillRect(.9*u,h*.17,.7*u,.7*u);// eye
+  ctx.restore()}
+
+// ---------- physics ----------
+function collide(p,ax){const x0=Math.floor(p.x),x1=Math.floor(p.x+p.w-1e-6),y0=Math.floor(p.y),y1=Math.floor(p.y+p.h-1e-6);
+  for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){if(!solid(at(tx,ty)))continue;
+    if(ax==='x'){if(p.vx>0)p.x=tx-p.w;else if(p.vx<0)p.x=tx+1;p.vx=0}
+    else{if(p.vy>0){p.y=ty-p.h;p.ground=true}else if(p.vy<0)p.y=ty+1;p.vy=0}return true}return false}
+function inWater(p){return at(Math.floor(p.x+p.w/2),Math.floor(p.y+p.h*.6))===7}
+function step(dt){const p=player,wet=inWater(p),dir=(keys.r?1:0)-(keys.l?1:0);
+  p.vx=dir*(wet?3:5);if(dir)p.face=dir;p.walk+=dt;
+  if(keys.j){if(wet)p.vy=Math.max(p.vy-40*dt,-4.5);else if(p.ground){p.vy=-11.2;p.ground=false;L.beep(300,.06,'triangle',.03,1.5)}}
+  p.vy+=(wet?10:32)*dt;p.vy=Math.min(p.vy,wet?3:22);
+  p.x+=p.vx*dt;p.x=Math.max(0,Math.min(W-p.w,p.x));collide(p,'x');
+  p.ground=false;p.y+=p.vy*dt;collide(p,'y');
+  if(p.y>H){p.y=0}
+}
+
+// ---------- mining / building ----------
+const reach=(tx,ty)=>Math.hypot(tx+.5-(player.x+player.w/2),ty+.5-(player.y+player.h*.35))<=REACH;
+function tileAt(e){return[Math.floor(e.clientX/ts+camX),Math.floor(e.clientY/ts+camY)]}
+function overlapsPlayer(tx,ty){const p=player;return tx+1>p.x&&tx<p.x+p.w&&ty+1>p.y&&ty<p.y+p.h}
+function place(tx,ty){
+  if(!reach(tx,ty)||!(at(tx,ty)===0||at(tx,ty)===7)||overlapsPlayer(tx,ty))return;
+  if(!(inv[selId]>0)){toast('Nichts zum Bauen ausgewählt');return}
+  if(![[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>solid(at(tx+dx,ty+dy))||at(tx+dx,ty+dy)===7)){toast('Blöcke brauchen einen Nachbarn');return}
+  set(tx,ty,selId);inv[selId]--;L.beep(240,.05,'square',.04);hotbar()}
+function finishBreak(tx,ty){const id=at(tx,ty);set(tx,ty,0);const d=DROP[id]||id;inv[d]=(inv[d]||0)+1;
+  // water flows into the gap from the side or above
+  if(at(tx,ty-1)===7||at(tx-1,ty)===7||at(tx+1,ty)===7)set(tx,ty,7);
+  L.noise(.08,.15);L.vib(10);hotbar()}
+
+// ---------- crafting ----------
+const TOOLS=['Hand','Steinhacke','Eisenhacke'],TOOLSPD=[1,1.7,2.8];
+const RECIPES=[
+  {n:'4 Bretter',need:{4:1},give:{10:4}},
+  {n:'2 Glas',need:{6:2,8:1},give:{11:2}},
+  {n:'2 Ziegel',need:{3:3},give:{12:2}},
+  {n:'Steinhacke (schneller abbauen)',need:{3:3,10:2},tool:1},
+  {n:'Eisenhacke (noch schneller)',need:{9:3,10:2},tool:2}];
+function renderCraft(){$('recipes').innerHTML=RECIPES.map((r,i)=>{const can=Object.entries(r.need).every(([k,v])=>(inv[k]||0)>=v)&&(!r.tool||tool<r.tool);
+  const need=Object.entries(r.need).map(([k,v])=>`${v} ${NAME[k]}`).join(' + ');
+  return`<div class="rec"><div>${r.n}<small>${need}${r.tool&&tool>=r.tool?' · vorhanden':''}</small></div><button data-r="${i}" ${can?'':'disabled'}>Bauen</button></div>`}).join('')+
+  `<div class="rec"><div>Werkzeug<small>${TOOLS[tool]}</small></div></div>`;
+  $('recipes').querySelectorAll('button').forEach(b=>b.onclick=()=>{const r=RECIPES[+b.dataset.r];Object.entries(r.need).forEach(([k,v])=>inv[k]-=v);
+    if(r.tool)tool=r.tool;else Object.entries(r.give).forEach(([k,v])=>inv[k]=(inv[k]||0)+v);L.beep(660,.12,'triangle',.05,1.4);hotbar();renderCraft();save()})}
+$('craftBtn').onclick=()=>{renderCraft();$('craft').hidden=false};$('craftClose').onclick=()=>{$('craft').hidden=true};
+
+// ---------- hotbar / mode ----------
+function hotbar(){const items=ORDER.filter(id=>inv[id]>0);if(!(inv[selId]>0)&&items.length)selId=items[0];
+  $('hot').innerHTML=items.length?items.map(id=>`<button data-id="${id}" class="${id===selId?'sel':''}" aria-label="${NAME[id]}"><canvas width="16" height="16"></canvas><b>${inv[id]}</b></button>`).join(''):'<span class="empty">Noch leer – bau etwas ab</span>';
+  $('hot').querySelectorAll('button').forEach(b=>{b.querySelector('canvas').getContext('2d').drawImage(tex[+b.dataset.id],0,0);b.onclick=()=>{selId=+b.dataset.id;if(mode!=='build')setMode('build');hotbar()}})}
+const PICK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8c4-4 12-4 16 0"/><path d="M12 6l-6 14"/></svg>';
+const CUBE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5L12 12l8-4.5M12 12v9"/></svg>';
+function setMode(m){mode=m;$('mode').innerHTML=m==='break'?PICK:CUBE;$('mode').className=m==='build'?'build':'';toast(m==='break'?'Abbauen: Block gedrückt halten':'Bauen: Feld antippen')}
+$('mode').onclick=()=>setMode(mode==='break'?'build':'break');
+let toastTimer;function toast(t){const el=$('toast');el.textContent=t;el.style.opacity=1;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.opacity=0,1600)}
+
+// ---------- save / load ----------
+function save(){if(!world)return;const runs=[];let cur=world[0],n=0;for(let i=0;i<world.length;i++){if(world[i]===cur)n++;else{runs.push(cur,n);cur=world[i];n=1}}runs.push(cur,n);
+  L.store.set('bauwelt_save',JSON.stringify({seed,runs,p:[player.x,player.y],inv,tool,dayT}));
+  const blocks=Object.values(inv).reduce((a,b)=>a+b,0);L.store.set('stat_bauwelt',`Gespeicherte Welt · ${blocks} Blöcke im Rucksack`)}
+function load(){try{const d=JSON.parse(L.store.get('bauwelt_save'));if(!d)return false;generate(d.seed);let i=0;for(let k=0;k<d.runs.length;k+=2){world.fill(d.runs[k],i,i+d.runs[k+1]);i+=d.runs[k+1]}
+  player.x=d.p[0];player.y=d.p[1];inv=d.inv||{};tool=d.tool||0;dayT=d.dayT??.08;return true}catch(e){return false}}
+
+// ---------- render ----------
+function fit(){const dpr=window.devicePixelRatio||1;cv.width=innerWidth*dpr;cv.height=innerHeight*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=false;
+  ts=Math.round(Math.max(22,Math.min(48,innerHeight/13,innerWidth/18)))}
+addEventListener('resize',fit);
+function sky(){const s=Math.sin(dayT*Math.PI*2);// dayT 0 Sonnenaufgang, .25 Mittag, .5 Abend, .75 Mitternacht
+  const light=Math.max(.28,Math.min(1,.55+s*.8));
+  const day=[142,197,232],dusk=[240,163,107],night=[15,22,48];
+  const mix=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
+  const col=s>.25?day:s>-.1?mix(dusk,day,(s+.1)/.35):mix(night,dusk,Math.max(0,(s+.5)/.4));
+  return{col:`rgb(${col})`,light,s}}
+function draw(){const vw=innerWidth,vh=innerHeight,sk=sky();
+  camX=Math.max(0,Math.min(W-vw/ts,player.x+player.w/2-vw/ts/2));camY=Math.max(0,Math.min(H-vh/ts,player.y+player.h/2-vh/ts/2));
+  ctx.fillStyle=sk.col;ctx.fillRect(0,0,vw,vh);
+  if(sk.s<0){ctx.fillStyle='rgba(255,255,255,.7)';for(let i=0;i<60;i++){const x=(hash(i,1,9)*vw*1.2-camX*2)%vw,y=hash(i,2,9)*vh*.5;ctx.fillRect((x+vw)%vw,y,2,2)}}
+  {const day=dayT<.5,ph=(day?dayT:dayT-.5)/.5;ctx.fillStyle=day?'#fff2b0':'#e9eef7';ctx.beginPath();ctx.arc(vw*(.08+.84*ph),vh*.6-Math.sin(ph*Math.PI)*vh*.48,ts*.9,0,7);ctx.fill()}
+  const x0=Math.floor(camX),y0=Math.floor(camY),x1=Math.ceil(camX+vw/ts),y1=Math.ceil(camY+vh/ts);
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const id=at(x,y);
+    if((!id||id===7)&&y>(surf[x]??H)){ctx.fillStyle=y>(surf[x]??H)+4?'#2a2622':'#3b3026';ctx.fillRect(Math.round((x-camX)*ts),Math.round((y-camY)*ts),ts+1,ts+1)}
+    if(!id)continue;const sx=Math.round((x-camX)*ts),sy=Math.round((y-camY)*ts);
+    ctx.drawImage(tex[id],sx,sy,ts+1,ts+1)}
+  drawPlayer();
+  if(brk){const p=Math.min(1,brk.t/brk.need),sx=(brk.x-camX)*ts,sy=(brk.y-camY)*ts;ctx.strokeStyle='rgba(0,0,0,.75)';ctx.lineWidth=2;ctx.beginPath();
+    const n=Math.ceil(p*6);for(let i=0;i<n;i++){const a=hash(i,brk.x,brk.y)*6.28,l=ts*.45*p;ctx.moveTo(sx+ts/2,sy+ts/2);ctx.lineTo(sx+ts/2+Math.cos(a)*l,sy+ts/2+Math.sin(a)*l)}ctx.stroke()}
+  if(ptr&&ptr.tx!==undefined){const ok=reach(ptr.tx,ptr.ty);ctx.strokeStyle=ok?'rgba(255,255,255,.85)':'rgba(255,90,90,.6)';ctx.lineWidth=2;ctx.strokeRect((ptr.tx-camX)*ts+1,(ptr.ty-camY)*ts+1,ts-2,ts-2)}
+  if(sk.light<1){ctx.fillStyle=`rgba(8,12,35,${(1-sk.light)*.8})`;ctx.fillRect(0,0,vw,vh)}
+}
+let last=performance.now();
+function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;
+  if(state==='play'){step(dt);dayT=(dayT+dt/360)%1;
+    if(brk){if(!reach(brk.x,brk.y)||!solid(at(brk.x,brk.y)))brk=null;else{brk.t+=dt;if(brk.t>=brk.need){finishBreak(brk.x,brk.y);brk=null;if(ptr&&ptr.down)startBreak(ptr.tx,ptr.ty)}}}
+    saveT+=dt;if(saveT>10){saveT=0;save()}}
+  if(world)draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+
+// ---------- input ----------
+function startBreak(tx,ty){const id=at(tx,ty);if(!id||id===7||id===13||!reach(tx,ty)){brk=null;return}brk={x:tx,y:ty,t:0,need:HARD[id]/TOOLSPD[tool]}}
+cv.addEventListener('pointerdown',e=>{if(state!=='play')return;L.resume();const[tx,ty]=tileAt(e);ptr={down:true,tx,ty,id:e.pointerId};
+  try{cv.setPointerCapture(e.pointerId)}catch(err){}
+  if(e.button===2||mode==='build')return;startBreak(tx,ty)});
+cv.addEventListener('pointermove',e=>{const[tx,ty]=tileAt(e);if(!ptr)ptr={};ptr.tx=tx;ptr.ty=ty;if(ptr.down&&mode==='break'&&e.button!==2&&(!brk||brk.x!==tx||brk.y!==ty))startBreak(tx,ty)});
+cv.addEventListener('pointerup',e=>{if(!ptr)return;const[tx,ty]=tileAt(e);if(ptr.down&&(mode==='build'||e.button===2))place(tx,ty);ptr.down=false;brk=null;if(e.pointerType!=='mouse')ptr=null});
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+document.querySelectorAll('.pad button').forEach(b=>{const k=b.dataset.k;
+  b.addEventListener('pointerdown',e=>{e.preventDefault();L.resume();keys[k]=true;b.classList.add('on');try{b.setPointerCapture(e.pointerId)}catch(err){}});
+  ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>{keys[k]=false;b.classList.remove('on')}))});
+const KM={ArrowLeft:'l',a:'l',A:'l',ArrowRight:'r',d:'r',D:'r',ArrowUp:'j',w:'j',W:'j',' ':'j'};
+addEventListener('keydown',e=>{if(KM[e.key]){keys[KM[e.key]]=true;e.preventDefault()}
+  else if(e.key==='e'||e.key==='E')setMode(mode==='break'?'build':'break');
+  else if(/^[1-9]$/.test(e.key)){const items=ORDER.filter(id=>inv[id]>0);const id=items[+e.key-1];if(id){selId=id;hotbar()}}});
+addEventListener('keyup',e=>{if(KM[e.key])keys[KM[e.key]]=false});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)save()});
+addEventListener('pagehide',save);
+
+tex=Array.from({length:15},(_,i)=>i?makeTex(i):null);
+const hasSave=()=>!!L.store.get('bauwelt_save');
+const menu=L.menu({prefix:'bauwelt_',title:'Bauwelt',
+  text:'Lauf mit den Pfeilen, spring mit ▲. Im Abbau-Modus hältst du einen Block gedrückt, im Bau-Modus tippst du ein freies Feld an. In der Werkbank stellst du Bretter, Glas, Ziegel und bessere Hacken her. Deine Welt wird automatisch gespeichert.',
+  start:hasSave()?'Weiterspielen':'Neue Welt',onStart:()=>begin(),
+  extra:{label:'Neue Welt erzeugen',onClick:()=>{generate(Math.floor(Math.random()*1e9));save();begin()}}});
+function begin(){state='play';L.orient('landscape');fit();hotbar();setMode(mode);save()}
+L.icons($('icons'),{onMenu:()=>{state='menu';save();menu.show('Bauwelt','Pause. Deine Welt ist gespeichert.','Weiterspielen',false)},orient:'landscape'});
+if(!(hasSave()&&load()))generate(Math.floor(Math.random()*1e9));
+setMode('break');fit();
+}
+</script>
+</body>
+</html>

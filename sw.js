@@ -1,8 +1,8 @@
 // Service Worker der Spielesammlung.
 // Liefert alles aus dem Cache (läuft offline) und holt im Hintergrund die neueste Version.
 // Updates erscheinen deshalb automatisch beim übernächsten Start, ohne dass hier etwas geändert werden muss.
-const CACHE = 'spiele-v1';
-const CORE = ['./', 'index.html', 'manifest.json', 'games.json',
+const CACHE = 'spiele-v2';
+const CORE = ['./', 'index.html', 'manifest.json', 'games.json', 'lib.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

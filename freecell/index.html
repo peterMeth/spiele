@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#174337">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>FreeCell</title>
+<style>
+/* VOICE: quiet, concentrated solitaire.  IDEA: cards laid out on a green felt card table.
+   PICTURE: 8 cascades, 4 free cells and 4 foundations.  COLOUR/TYPE: deep felt green, ivory cards, red and black suits; condensed ranks.
+   LAYOUT: icon row, cells+foundations row, cascades fill the rest, game number and new-deal in the footer. */
+:root{color-scheme:dark;--bg:#174337;--ink:#f1f5ef;--muted:#b4cbbf;--lib-panel:#1f5446;--lib-edge:#2e6b5a;--lib-ink:#f1f5ef;--lib-muted:#b4cbbf;--lib-acc:#f2c14e;--lib-acc-ink:#2a1f05}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:radial-gradient(ellipse at 50% 20%,#1f5a49,#123629);color:var(--ink);font:15px/1.3 system-ui,Roboto,sans-serif;overflow:hidden;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.top{display:flex;gap:8px;padding:8px 10px 4px;max-width:760px;width:100%;margin:0 auto}
+#table{flex:1;position:relative;min-height:0;max-width:760px;width:100%;margin:0 auto}
+.slot{position:absolute;border-radius:6px;border:2px solid rgba(255,255,255,.18);display:grid;place-items:center;color:rgba(255,255,255,.28);font-size:22px}
+.card{position:absolute;border-radius:6px;background:#fbf8f0;box-shadow:0 1px 2px rgba(0,0,0,.4);color:#1b1b1b;overflow:hidden;cursor:pointer;transition:transform .12s}
+.card.red{color:#c0262d}
+.card .ix{position:absolute;left:4%;top:1%;font:700 var(--fs)/1 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;letter-spacing:-.04em;white-space:nowrap}
+.card .big{position:absolute;right:6%;bottom:4%;font-size:calc(var(--fs)*1.6);line-height:1}
+.card.sel{box-shadow:0 0 0 3px #f2c14e,0 2px 6px rgba(0,0,0,.5)}
+.card.hint{box-shadow:0 0 0 3px #7fdcff}
+.foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px 12px;max-width:760px;width:100%;margin:0 auto;color:var(--muted)}
+.foot button{white-space:nowrap;font:600 15px system-ui,Roboto,sans-serif;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--lib-edge);background:var(--lib-panel);color:var(--ink)}
+@media(prefers-reduced-motion:reduce){.card{transition:none}}
+</style>
+</head>
+<body>
+<div class="top" id="icons"></div>
+<div id="table"></div>
+<div class="foot"><span id="info"></span><button id="again">Neues Spiel</button></div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),T=$('table');
+// Karte = Zahl 0..51: Rang (c>>2)+1, Farbe c&3 (0 Kreuz, 1 Karo, 2 Herz, 3 Pik) wie im klassischen Microsoft-Geben
+const rank=c=>(c>>2)+1,suit=c=>c&3,red=c=>suit(c)===1||suit(c)===2;
+const SUIT=['♣','♦','♥','♠'].map(s=>s+'︎'),RK=['','A','2','3','4','5','6','7','8','9','10','B','D','K'];
+let cols,cells,found,undo=[],sel=null,gameNo=1,moves=0,won=false,cw=40,ch=56,gap=4,colTop=70;
+let wins=+(L.store.get('freecell_wins')||0),played=+(L.store.get('freecell_played')||0);
+const saveStat=()=>{L.store.set('freecell_wins',wins);L.store.set('freecell_played',played);L.store.set('stat_freecell',`${wins} von ${played} Spielen gewonnen`)};
+
+function deal(n){
+  let s=n;const rnd=()=>{s=(s*214013+2531011)&0x7fffffff;return s>>16};
+  const deck=[...Array(52).keys()];cols=Array.from({length:8},()=>[]);
+  for(let i=0;i<52;i++){const left=52-i,j=rnd()%left;cols[i%8].push(deck[j]);deck[j]=deck[left-1]}
+  cells=[null,null,null,null];found=[0,0,0,0];undo=[];sel=null;moves=0;won=false;gameNo=n;played++;saveStat();L.orient('portrait');render();
+}
+const snap=()=>JSON.stringify({cols,cells,found,moves});
+function restore(s){const o=JSON.parse(s);cols=o.cols;cells=o.cells;found=o.found;moves=o.moves}
+const okOn=(c,t)=>red(c)!==red(t)&&rank(t)===rank(c)+1;
+function runStart(col){let k=col.length-1;while(k>0&&okOn(col[k],col[k-1]))k--;return k}
+const freeCells=()=>cells.filter(c=>c===null).length,emptyCols=ex=>cols.filter((c,i)=>!c.length&&i!==ex).length;
+const maxRun=toEmpty=>(freeCells()+1)*Math.pow(2,emptyCols()-(toEmpty?1:0));
+
+// source: {t:'col',i,k} or {t:'cell',i}; target: {t:'col'|'cell'|'found',i}
+function cardsOf(src){return src.t==='cell'?[cells[src.i]]:cols[src.i].slice(src.k)}
+function canMove(src,dst){
+  const cs=cardsOf(src),c=cs[0];if(c==null)return false;
+  if(dst.t==='found'){return cs.length===1&&found[suit(c)]===rank(c)-1}
+  if(dst.t==='cell'){return cs.length===1&&cells[dst.i]===null}
+  const col=cols[dst.i];if(src.t==='col'&&src.i===dst.i)return false;
+  if(!col.length)return cs.length<=maxRun(true);
+  return okOn(c,col[col.length-1])&&cs.length<=maxRun(false);
+}
+function doMove(src,dst,record=true){
+  if(record)undo.push(snap());const cs=cardsOf(src);
+  if(src.t==='cell')cells[src.i]=null;else cols[src.i].splice(src.k);
+  if(dst.t==='found')found[suit(cs[0])]=rank(cs[0]);else if(dst.t==='cell')cells[dst.i]=cs[0];else cols[dst.i].push(...cs);
+  if(record){moves++;L.beep(dst.t==='found'?720:420,.04,'triangle',.04)}
+}
+function autoMove(src){
+  const cs=cardsOf(src);if(cs[0]==null)return false;
+  const c=cs[0];if(cs.length===1&&canMove(src,{t:'found'}))return doMove(src,{t:'found'}),true;
+  for(let i=0;i<8;i++)if(cols[i].length&&canMove(src,{t:'col',i}))return doMove(src,{t:'col',i}),true;
+  if(!(src.t==='col'&&src.k===0))for(let i=0;i<8;i++)if(!cols[i].length&&canMove(src,{t:'col',i}))return doMove(src,{t:'col',i}),true;
+  if(src.t==='col'&&cs.length===1){const i=cells.indexOf(null);if(i>=0)return doMove(src,{t:'cell',i}),true}
+  return false;
+}
+function safe(c){const r=rank(c);if(r<=2)return true;const opp=red(c)?[0,3]:[1,2];return opp.every(s=>found[s]>=r-1)}
+function collect(){
+  let any=false,again=true;
+  while(again){again=false;
+    for(let i=0;i<4;i++){const c=cells[i];if(c!==null&&found[suit(c)]===rank(c)-1&&safe(c)){doMove({t:'cell',i},{t:'found'},false);again=any=true}}
+    for(let i=0;i<8;i++){const col=cols[i];if(!col.length)continue;const c=col[col.length-1];if(found[suit(c)]===rank(c)-1&&safe(c)){doMove({t:'col',i,k:col.length-1},{t:'found'},false);again=any=true}}}
+  if(found.every(f=>f===13)&&!won){won=true;wins++;saveStat();L.beep(660,.15,'triangle',.06,1.5);setTimeout(()=>L.beep(990,.3,'triangle',.06,1.3),160);
+    setTimeout(()=>menu.show('Gewonnen!',`Spiel #${gameNo} in ${moves} Zügen gelöst. ${wins} von ${played} Spielen gewonnen.`,'Nächstes Spiel',false),600)}
+  return any;
+}
+function after(){sel=null;collect();render()}
+
+// ---------- layout + render ----------
+function layout(){const w=T.clientWidth;gap=Math.max(3,Math.round(w*.012));cw=Math.floor((w-gap*9)/8);ch=Math.round(cw*1.42);colTop=ch+gap*3}
+const X=i=>gap+i*(cw+gap);
+function el(c,x,y,z,src){const d=document.createElement('div');d.className='card'+(red(c)?' red':'');
+  d.style.cssText=`left:${x}px;top:${y}px;width:${cw}px;height:${ch}px;z-index:${z};--fs:${Math.round(cw*.36)}px`;
+  d.innerHTML=`<span class="ix">${RK[rank(c)]}${SUIT[suit(c)]}</span><span class="big">${SUIT[suit(c)]}</span>`;d._src=src;return d}
+function render(){
+  layout();T.innerHTML='';const H=T.clientHeight;
+  for(let i=0;i<4;i++){const s=document.createElement('div');s.className='slot';s.style.cssText=`left:${X(i)}px;top:${gap}px;width:${cw}px;height:${ch}px`;s._dst={t:'cell',i};T.appendChild(s);
+    if(cells[i]!==null){const d=el(cells[i],X(i),gap,2,{t:'cell',i});if(sel&&sel.t==='cell'&&sel.i===i)d.classList.add('sel');T.appendChild(d)}}
+  for(let s=0;s<4;s++){const sl=document.createElement('div');sl.className='slot';sl.style.cssText=`left:${X(4+s)}px;top:${gap}px;width:${cw}px;height:${ch}px;font-size:${cw*.5}px`;
+    sl.textContent=SUIT[s];sl._dst={t:'found'};T.appendChild(sl);
+    if(found[s]){const d=el((found[s]-1)*4+s,X(4+s),gap,2,null);d._dst={t:'found'};T.appendChild(d)}}
+  for(let i=0;i<8;i++){const col=cols[i],n=col.length,avail=H-colTop-ch-gap;
+    const off=n>1?Math.min(ch*.3,Math.max(ch*.12,avail/(n-1))):0;
+    const s=document.createElement('div');s.className='slot';s.style.cssText=`left:${X(i)}px;top:${colTop}px;width:${cw}px;height:${ch}px;border-style:dashed`;s._dst={t:'col',i};T.appendChild(s);
+    const rs=runStart(col);
+    col.forEach((c,k)=>{const d=el(c,X(i),colTop+k*off,3+k,{t:'col',i,k});d._dst={t:'col',i};
+      if(sel&&sel.t==='col'&&sel.i===i&&k>=sel.k)d.classList.add('sel');T.appendChild(d)})}
+  $('info').textContent=`Spiel #${gameNo} · ${moves} Züge`;
+}
+new ResizeObserver(()=>cols&&render()).observe(T);
+
+// ---------- input ----------
+T.addEventListener('click',e=>{
+  if(won)return;L.resume();const t=e.target.closest('.card,.slot');if(!t){sel=null;render();return}
+  const src=t._src,dst=t._dst;
+  if(sel){
+    const same=src&&src.t===sel.t&&src.i===sel.i&&(src.t==='cell'||src.k>=sel.k);
+    if(same){autoMove(sel)?after():(sel=null,render());return}
+    if(dst&&canMove(sel,dst)){doMove(sel,dst);after();return}
+  }
+  if(src){let s=src;if(s.t==='col'){const rs=runStart(cols[s.i]);if(s.k<rs){L.beep(200,.05,'square',.03);sel=null;render();return}}
+    sel=s;L.beep(800,.02,'sine',.02);render();return}
+  sel=null;render();
+});
+T.addEventListener('dblclick',e=>e.preventDefault());
+
+function newDeal(){deal(1+Math.floor(Math.random()*32000))}
+$('again').onclick=newDeal;
+const menu=L.menu({prefix:'freecell_',title:'FreeCell',
+  text:'Bring alle Karten nach Farbe von Ass bis König auf die vier Ablagen rechts oben. In den Spalten legst du absteigend und abwechselnd rot/schwarz an. Die vier freien Zellen links oben nehmen je eine Karte auf. Tippe eine Karte an und dann das Ziel, oder tippe sie zweimal für einen automatischen Zug.',
+  start:'Spiel starten',onStart:()=>{if(!cols||won)newDeal()}});
+L.icons($('icons'),{onMenu:()=>menu.show('FreeCell',`Spiel #${gameNo}. ${wins} von ${played} Spielen gewonnen.`,'Weiterspielen',false),
+  onUndo:()=>{if(undo.length&&!won){restore(undo.pop());sel=null;render()}},orient:'portrait'});
+saveStat();
+}
+</script>
+</body>
+</html>

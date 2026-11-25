@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#1d2a23">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Dame</title>
+<style>
+/* VOICE: calm, classic parlour game.  IDEA: a wooden board on green baize in a club room.
+   PICTURE: the 8x8 board with cream and ebony pieces, crowned kings.  COLOUR/TYPE: baize green, maple/walnut squares, cream and ebony.
+   LAYOUT: icon row, status, square board as large as possible, piece counts below. */
+:root{color-scheme:dark;--bg:#1d2a23;--ink:#f3efe4;--muted:#b8c2b8;--lib-panel:#26362d;--lib-edge:#3a4d41;--lib-ink:#f3efe4;--lib-muted:#b8c2b8;--lib-acc:#e9c46a;--lib-acc-ink:#2a2208}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,Roboto,sans-serif;overflow:hidden;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.top{display:flex;gap:8px;padding:8px 10px 4px;max-width:640px;width:100%;margin:0 auto}
+.st{text-align:center;font:700 22px/1.2 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;padding:4px 10px;min-height:34px;display:flex;align-items:center;justify-content:center;gap:10px}
+.dot{width:18px;height:18px;border-radius:50%;flex:none;border:2px solid rgba(0,0,0,.35)}
+.stage{flex:1;position:relative;min-height:0;touch-action:none}
+canvas{position:absolute;display:block;touch-action:none}
+.foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 14px 12px;max-width:640px;width:100%;margin:0 auto;color:var(--muted);font-weight:600}
+.foot button{white-space:nowrap;font:600 15px system-ui,Roboto,sans-serif;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--lib-edge);background:var(--lib-panel);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="top" id="icons"></div>
+<div class="st" id="st"></div>
+<div class="stage" id="stage"><canvas id="c"></canvas></div>
+<div class="foot"><span id="count"></span><button id="again">Neue Partie</button></div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d'),stage=$('stage');
+// 0 leer, 1 weißer Stein, 2 weiße Dame, 3 schwarzer Stein, 4 schwarze Dame. Weiß (0) unten, zieht nach oben.
+const own=v=>v===1||v===2?0:v>=3?1:-1,isK=v=>v===2||v===4,inb=(r,c)=>r>=0&&r<8&&c>=0&&c<8;
+const DIRS=[[-1,-1],[-1,1],[1,-1],[1,1]];
+let b=[],turn=0,over=true,busy=false,sel=null,path=[],legal=[],lastMove=null,quiet=0,anim=null,score=[0,0],starter=0,set,sz=40;
+const names=()=>set.mode?['Weiß','Schwarz']:['Du','PC'];
+const isAI=p=>set.mode===0&&p===1;
+
+function caps(bd,sq,v,p,pth,capd,out){
+  let found=false;const r=sq>>3,c=sq&7;
+  for(const[dr,dc]of DIRS){
+    if(!isK(v)){const r2=r+2*dr,c2=c+2*dc;if(!inb(r2,c2))continue;const m=(r+dr)*8+c+dc,l=r2*8+c2;
+      if(own(bd[m])===1-p&&!capd.includes(m)&&bd[l]===0){found=true;caps(bd,l,v,p,[...pth,l],[...capd,m],out)}}
+    else{let r1=r+dr,c1=c+dc;while(inb(r1,c1)&&bd[r1*8+c1]===0){r1+=dr;c1+=dc}
+      if(!inb(r1,c1))continue;const m=r1*8+c1;if(own(bd[m])!==1-p||capd.includes(m))continue;
+      let r2=r1+dr,c2=c1+dc;while(inb(r2,c2)&&bd[r2*8+c2]===0){found=true;const l=r2*8+c2;caps(bd,l,v,p,[...pth,l],[...capd,m],out);r2+=dr;c2+=dc}}
+  }
+  if(!found&&capd.length)out.push({path:pth,capd});
+}
+function gen(bd,p){
+  const cs=[],sm=[];
+  for(let sq=0;sq<64;sq++){const v=bd[sq];if(own(v)!==p)continue;
+    bd[sq]=0;caps(bd,sq,v,p,[sq],[],cs);bd[sq]=v;
+    if(cs.length)continue;const r=sq>>3,c=sq&7;
+    for(const[dr,dc]of DIRS){
+      if(!isK(v)){if(dr!==(p?1:-1))continue;const r1=r+dr,c1=c+dc;if(inb(r1,c1)&&bd[r1*8+c1]===0)sm.push({path:[sq,r1*8+c1],capd:[]})}
+      else{let r1=r+dr,c1=c+dc;while(inb(r1,c1)&&bd[r1*8+c1]===0){sm.push({path:[sq,r1*8+c1],capd:[]});r1+=dr;c1+=dc}}}
+  }
+  return cs.length?cs:sm;
+}
+function apply(bd,m){
+  const n=bd.slice(),f=m.path[0],t=m.path[m.path.length-1];let v=n[f];n[f]=0;m.capd.forEach(s=>n[s]=0);
+  if(v===1&&t>>3===0)v=2;if(v===3&&t>>3===7)v=4;n[t]=v;return n;
+}
+function evalB(bd,p){let s=0;
+  for(let sq=0;sq<64;sq++){const v=bd[sq];if(!v)continue;const o=own(v),r=sq>>3,c=sq&7;
+    let x=isK(v)?320:100+(o===0?7-r:r)*4;if(c>1&&c<6&&r>1&&r<6)x+=4;s+=o===p?x:-x}
+  return s}
+function negamax(bd,d,a,bt,p){
+  const ms=gen(bd,p);if(!ms.length)return -100000-d;if(d<=0)return evalB(bd,p);
+  let best=-1e9;
+  for(const m of ms){const v=-negamax(apply(bd,m),d-1-(0),-bt,-a,1-p);if(v>best)best=v;if(best>a)a=best;if(a>=bt)break}
+  return best}
+function aiPick(){
+  const ms=gen(b,1);if(set.diff===0&&Math.random()<.35)return ms[Math.floor(Math.random()*ms.length)];
+  const d=[2,4,6][set.diff];let best=-1e9,bm=[];
+  for(const m of ms){const v=-negamax(apply(b,m),d-1,-1e9,1e9,0);if(v>best){best=v;bm=[m]}else if(v===best)bm.push(m)}
+  return bm[Math.floor(Math.random()*bm.length)]}
+
+// ---------- flow ----------
+function counts(){let w=0,k=0;b.forEach(v=>{if(own(v)===0)w++;else if(own(v)===1)k++});return[w,k]}
+function status(txt){
+  const n=names(),[w,k]=counts();$('count').textContent=`Steine ${w}:${k} · Partien ${score[0]}:${score[1]}`;
+  if(txt){$('st').innerHTML=txt;return}
+  const must=legal.length&&legal[0].capd.length?' – Schlagen ist Pflicht':'';
+  $('st').innerHTML=`<span class="dot" style="background:${turn?'#2b2420':'#f1e4c8'}"></span>${isAI(turn)?'PC denkt …':(set.mode?n[turn]+' ist dran':'Du bist dran')}${must}`;
+}
+function newGame(){
+  b=Array(64).fill(0);for(let sq=0;sq<64;sq++){const r=sq>>3,c=sq&7;if((r+c)%2)b[sq]=r<3?3:r>4?1:0}
+  turn=starter;over=false;busy=false;sel=null;path=[];lastMove=null;quiet=0;L.orient('portrait');next();
+}
+function next(){
+  legal=gen(b,turn);
+  if(!legal.length){over=true;const w=1-turn,n=names();score[w]++;if(!set.mode)L.record('dame',w===0);
+    status(set.mode?`${n[w]} gewinnt!`:(w===0?'Du gewinnst!':'Der PC gewinnt'));L.beep(w===0||set.mode?880:220,.35,'triangle',.06,w===0||set.mode?1.5:.6);starter=1-starter;return}
+  if(quiet>=50){over=true;status('Remis – 25 Züge ohne Schlagen');starter=1-starter;return}
+  status();if(isAI(turn)){busy=true;setTimeout(()=>doMove(aiPick()),350)}
+}
+function doMove(m){
+  busy=true;sel=null;path=[];const v=b[m.path[0]];
+  anim={m,v,i:0,t:0};
+}
+function finishMove(m){
+  const wasMan=!isK(b[m.path[0]]);b=apply(b,m);lastMove=m;
+  quiet=(m.capd.length||wasMan)?0:quiet+1;
+  if(m.capd.length){L.beep(160,.12,'square',.07);L.vib(25)}else L.beep(420,.05,'triangle',.04);
+  anim=null;busy=false;turn=1-turn;next();
+}
+
+// ---------- drawing ----------
+function fit(){
+  const r=stage.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+  sz=Math.floor(Math.min(r.width-16,r.height-8)/8);const w=sz*8;
+  cv.style.width=w+'px';cv.style.height=w+'px';cv.style.left=(r.width-w)/2+'px';cv.style.top=(r.height-w)/2+'px';
+  cv.width=Math.round(w*dpr);cv.height=Math.round(w*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+new ResizeObserver(fit).observe(stage);
+function piece(x,y,v){const R=sz*.38,white=own(v)===0;
+  ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.arc(x+2,y+4,R,0,7);ctx.fill();
+  ctx.fillStyle=white?'#d9c7a3':'#120f0d';ctx.beginPath();ctx.arc(x,y+2,R,0,7);ctx.fill();
+  const g=ctx.createRadialGradient(x-R*.3,y-R*.4,R*.1,x,y,R);g.addColorStop(0,white?'#fffaf0':'#4a3f38');g.addColorStop(1,white?'#efe0c0':'#231d1a');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,R,0,7);ctx.fill();
+  ctx.strokeStyle=white?'rgba(120,90,50,.45)':'rgba(255,255,255,.15)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,R*.66,0,7);ctx.stroke();
+  if(isK(v)){ctx.fillStyle=white?'#b8860b':'#e9c46a';const s=R*.5;ctx.beginPath();
+    ctx.moveTo(x-s,y+s*.45);ctx.lineTo(x-s,y-s*.35);ctx.lineTo(x-s*.5,y+s*.05);ctx.lineTo(x,y-s*.6);ctx.lineTo(x+s*.5,y+s*.05);ctx.lineTo(x+s,y-s*.35);ctx.lineTo(x+s,y+s*.45);ctx.closePath();ctx.fill()}
+}
+const sx=sq=>(sq&7)*sz+sz/2,sy=sq=>(sq>>3)*sz+sz/2;
+function draw(){
+  for(let sq=0;sq<64;sq++){const r=sq>>3,c=sq&7;ctx.fillStyle=(r+c)%2?'#8a5a35':'#ecd6ab';ctx.fillRect(c*sz,r*sz,sz,sz)}
+  if(lastMove){ctx.fillStyle='rgba(233,196,106,.35)';lastMove.path.forEach(s=>ctx.fillRect((s&7)*sz,(s>>3)*sz,sz,sz))}
+  const cand=sel===null?[]:legal.filter(m=>path.every((s,i)=>m.path[i]===s));
+  if(!over&&!busy&&!isAI(turn)){
+    if(sel===null){const from=new Set(legal.map(m=>m.path[0]));if(legal[0]&&legal[0].capd.length){ctx.strokeStyle='#e9c46a';ctx.lineWidth=3;from.forEach(s=>ctx.strokeRect((s&7)*sz+2,(s>>3)*sz+2,sz-4,sz-4))}}
+    else{ctx.fillStyle='rgba(255,255,255,.25)';ctx.fillRect((path[path.length-1]&7)*sz,(path[path.length-1]>>3)*sz,sz,sz);
+      const nx=new Set(cand.map(m=>m.path[path.length]).filter(s=>s!==undefined));
+      ctx.fillStyle='rgba(233,196,106,.85)';nx.forEach(s=>{ctx.beginPath();ctx.arc(sx(s),sy(s),sz*.15,0,7);ctx.fill()})}
+  }
+  for(let sq=0;sq<64;sq++){if(!b[sq])continue;if(anim&&sq===anim.m.path[0])continue;
+    if(sel!==null&&path.length>1&&sq===path[0])continue;piece(sx(sq),sy(sq),b[sq])}
+  if(sel!==null&&path.length>1)piece(sx(path[path.length-1]),sy(path[path.length-1]),b[path[0]]);
+  if(anim){const{m,i,t}=anim,a=m.path[i],z=m.path[i+1];piece(sx(a)+(sx(z)-sx(a))*t,sy(a)+(sy(z)-sy(a))*t,anim.v)}
+}
+let last=performance.now();
+function loop(ts){const dt=Math.min(.05,(ts-last)/1000);last=ts;
+  if(anim){anim.t+=dt/.16;if(anim.t>=1){anim.t=0;anim.i++;if(anim.i>=anim.m.path.length-1){const m=anim.m;finishMove(m)}}}
+  if(b.length)draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+
+// ---------- input ----------
+cv.addEventListener('pointerup',e=>{
+  if(over||busy||isAI(turn))return;const r=cv.getBoundingClientRect(),c=Math.floor((e.clientX-r.left)/sz),rw=Math.floor((e.clientY-r.top)/sz);
+  if(!inb(rw,c))return;const sq=rw*8+c;
+  const starts=legal.filter(m=>m.path[0]===sq);
+  if(sel===null||path.length===1&&starts.length){if(starts.length){sel=sq;path=[sq];L.beep(700,.03,'sine',.03)}else sel=null;return}
+  const cand=legal.filter(m=>path.every((s,i)=>m.path[i]===s)&&m.path[path.length]===sq);
+  if(!cand.length){if(path.length===1){sel=null;path=[]}return}
+  path.push(sq);
+  const done=cand.filter(m=>m.path.length===path.length);
+  if(done.length&&cand.length===done.length){const m=done[0];const p0=path[0];sel=null;path=[];b[p0]&&doMoveFrom(m)}
+});
+function doMoveFrom(m){doMove(m)}
+$('again').onclick=()=>newGame();
+
+const menu=L.menu({prefix:'dame_',title:'Dame',
+  text:'Steine ziehen schräg vorwärts, Schlagen ist Pflicht (auch rückwärts und mehrfach hintereinander). Wer die letzte Reihe erreicht, wird Dame und zieht beliebig weit.',
+  rows:[{key:'mode',label:'Modus',opts:[['Gegen PC',0],['1 vs 1',1]],def:0},{key:'diff',label:'PC',opts:[['Leicht',0],['Mittel',1],['Schwer',2]],def:1,showIf:s=>s.mode===0}],
+  onStart:()=>{score=[0,0];starter=0;newGame()}});
+set=menu.settings;
+L.icons($('icons'),{onMenu:()=>{over=true;menu.show()},orient:'portrait'});
+newGame();over=true;status(' ');fit();
+}
+</script>
+</body>
+</html>
