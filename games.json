@@ -58,5 +58,35 @@
     "title": "Vier in einer Reihe",
     "desc": "Steine einwerfen, vier verbinden – gegen PC oder zu zweit",
     "color": "#2d5d8f"
+  },
+  {
+    "id": "baseball",
+    "title": "Baseball",
+    "desc": "Home-Run-Derby: im richtigen Moment schlagen, 10 Würfe",
+    "color": "#3d8fd1"
+  },
+  {
+    "id": "bogen",
+    "title": "Bogenschießen",
+    "desc": "Spannen, zielen, Wind beachten – 4 Passen bis 70 m",
+    "color": "#f5d33f"
+  },
+  {
+    "id": "hammer",
+    "title": "Hammerwurf",
+    "desc": "Im Takt andrehen und im richtigen Moment loslassen",
+    "color": "#f28c28"
+  },
+  {
+    "id": "golf",
+    "title": "Golf",
+    "desc": "6 Löcher, ein Schlag aufs Grün – Schwungmeter und Wind",
+    "color": "#8fd178"
+  },
+  {
+    "id": "tontauben",
+    "title": "Tontauben",
+    "desc": "90 Sekunden Tauben schießen, 2 Schuss, dann nachladen",
+    "color": "#e8792b"
   }
 ]

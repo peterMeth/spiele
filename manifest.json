@@ -1,7 +1,7 @@
 {
   "name": "Spiele",
   "short_name": "Spiele",
-  "description": "Peters Spielesammlung: Pong, Snake, Gorillas, Brett- und Kartenspiele und mehr",
+  "description": "Peters Spielesammlung: Pong, Snake, Gorillas, Brett-, Karten- und Sportspiele",
   "lang": "de",
   "start_url": "./",
   "scope": "./",

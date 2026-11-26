@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#5aa3d8">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Baseball</title>
+<style>
+/* VOICE: sunny, punchy, ballpark fun.  IDEA: a Home-Run-Derby on a summer afternoon.
+   PICTURE: side view of the ballpark: batter, pitcher, mowed outfield stripes, the fence, the ball flying.
+   COLOUR/TYPE: blue sky, grass greens, clay infield, white ball, red seams; condensed scoreboard digits.
+   LAYOUT: icons top-left, scoreboard top-right, full-screen field, tap anywhere to swing. */
+:root{color-scheme:dark;--lib-panel:#24303a;--lib-edge:#3a4a57;--lib-ink:#fff;--lib-muted:#c8d3dc;--lib-acc:#f2c14e;--lib-acc-ink:#2a1f05}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;background:#5aa3d8;color:#fff;font:15px/1.3 system-ui,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.tl{position:fixed;left:calc(8px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));display:flex;gap:6px;z-index:3}
+.sb{position:fixed;right:calc(8px + env(safe-area-inset-right));top:calc(8px + env(safe-area-inset-top));z-index:3;background:rgba(20,28,34,.8);border-radius:12px;padding:6px 12px;display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:13px;color:#c8d3dc}
+.sb b{color:#fff;font:700 18px/1.2 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;text-align:right;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="tl" id="icons"></div>
+<div class="sb"><span>Wurf</span><b id="pn">0/10</b><span>Gesamt</span><b id="tot">0 m</b><span>Weitester</span><b id="best">0 m</b><span>Home Runs</span><b id="hr">0</b></div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d');
+const FENCE=115,PITCHES=10,K=.0045,G=9.81,MOUND=18.4;
+let vw,vh,s=30,camX=-3,state='menu',pitchNo=0,total=0,best=0,hrs=0,ball=null,pitcher={t:0},swing=-1,msg='',msgT=0,phase='',wait=0,carry=0,landed=false,trail=[],pitchKmh=0;
+let rec=+(L.store.get('baseball_best')||0);
+const save=()=>L.store.set('stat_baseball',`Weitester Schlag ${Math.round(rec)} m`);save();
+
+function fit(){const dpr=window.devicePixelRatio||1;vw=innerWidth;vh=innerHeight;cv.width=vw*dpr;cv.height=vh*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',fit);fit();
+const gy=()=>vh*.8,base=()=>Math.min(vw/24,gy()/7.5);
+const X=x=>(x-camX)*s,Y=y=>gy()-y*s;
+
+function ui(){$('pn').textContent=`${pitchNo}/${PITCHES}`;$('tot').textContent=`${Math.round(total)} m`;$('best').textContent=`${Math.round(best)} m`;$('hr').textContent=hrs}
+function newGame(){pitchNo=0;total=0;best=0;hrs=0;ui();state='play';L.orient('landscape');nextPitch()}
+function nextPitch(){
+  if(pitchNo>=PITCHES)return finish();
+  pitchNo++;ui();ball=null;swing=-1;landed=false;trail=[];phase='windup';pitcher.t=0;
+  const type=Math.random();const v=type<.25?19+Math.random()*3:type<.8?25+Math.random()*4:31+Math.random()*4;pitchKmh=Math.round(v*3.6);
+  pitcher.v=v;
+}
+function release(){const v=pitcher.v,T=(MOUND-1)/v;ball={x:MOUND-1,y:1.9,vx:-v,vy:(.95-1.9)/T+G*T/2,mode:'pitch'};phase='pitch';L.beep(220,.08,'triangle',.04,1.6)}
+function finish(){state='over';if(best>rec){rec=best;L.store.set('baseball_best',rec)}save();
+  L.menu&&menu.show(best>=rec&&best>0?'Neuer Rekord!':'Derby beendet',`${Math.round(total)} m insgesamt, weitester Schlag ${Math.round(best)} m, ${hrs} Home Run${hrs===1?'':'s'}. Rekord: ${Math.round(rec)} m.`,'Noch mal')}
+function say(t,d=1.4){msg=t;msgT=d}
+
+function doSwing(){if(state!=='play'||swing>=0||phase==='fly'||phase==='done')return;L.resume();swing=0;L.beep(140,.05,'sawtooth',.03,.6)}
+function contactCheck(){
+  // contact happens when the bat is level, ~0.09 s after the tap
+  if(!ball||ball.mode!=='pitch')return;const err=(ball.x-.7)/-ball.vx; // >0 early, <0 late (seconds)
+  if(Math.abs(err)>.11||ball.x<-.6){return}
+  const q=1-Math.abs(err)/.11,v=32+22*Math.pow(q,.8),a=(26-err*230)*Math.PI/180;
+  ball={x:.7,y:ball.y,vx:v*Math.cos(a),vy:v*Math.sin(a),mode:'fly'};phase='fly';carry=0;
+  L.noise(.12,.5);L.beep(900,.06,'square',.06);L.vib(40);
+  say(q>.85?'Volltreffer!':q>.55?'Guter Schlag':err>0?'Zu früh':'Zu spät',1.2);
+}
+function step(dt){
+  if(state!=='play')return;
+  if(phase==='windup'){pitcher.t+=dt;if(pitcher.t>1.1)release()}
+  if(swing>=0){const before=swing;swing+=dt/.18;if(before<.5&&swing>=.5)contactCheck();if(swing>=1&&phase!=='fly')swing=1}
+  if(ball){const n=4;for(let i=0;i<n;i++){const h=dt/n,sp=Math.hypot(ball.vx,ball.vy),k=ball.mode==='fly'?K:0;
+      ball.vx+=-k*sp*ball.vx*h;ball.vy+=(-G-k*sp*ball.vy)*h;ball.x+=ball.vx*h;ball.y+=ball.vy*h;
+      if(ball.mode==='fly'&&ball.x>=FENCE-.5&&ball.x<=FENCE+.5&&ball.y<3&&ball.y>0&&!landed){ball.vx*=-.3;ball.x=FENCE-.6} // off the wall
+      if(ball.y<=0){ball.y=0;
+        if(ball.mode==='fly'&&!landed){landed=true;carry=ball.x;const hr=carry>FENCE;
+          if(carry>0){total+=carry;best=Math.max(best,carry);if(hr){hrs++;say(`HOME RUN! ${Math.round(carry)} m`,2.2);L.beep(660,.15,'triangle',.06,1.5);setTimeout(()=>L.beep(990,.3,'triangle',.06,1.3),150)}else say(`${Math.round(carry)} m`,1.8)}
+          else say('Foul',1.2);ui()}
+        if(ball.mode==='fly'){ball.vy=-ball.vy*.35;ball.vx*=.6;if(Math.abs(ball.vy)<1){ball.vy=0;ball.vx*=.9}}
+        else{ball.vy=-ball.vy*.3;ball.vx*=.7}
+      }}
+    if(ball.mode==='fly')trail.push([ball.x,ball.y]);if(trail.length>40)trail.shift();
+    if(ball.mode==='pitch'&&ball.x<-2&&phase==='pitch'){phase='done';say(swing>=0?'Daneben – Strike':'Strike',1.2);wait=1.3}
+    if(ball.mode==='fly'&&landed&&Math.abs(ball.vx)<.6&&ball.y===0&&phase==='fly'){phase='done';wait=1.4}
+  }
+  if(phase==='done'){wait-=dt;if(wait<=0)nextPitch()}
+  // camera: zoom out to follow the ball
+  let ts=base();if(ball&&ball.mode==='fly'){ts=Math.min(ts,vw/(Math.max(ball.x,0)+12),(gy()-30)/(ball.y+4))}
+  s+=(ts-s)*Math.min(1,dt*(ts<s?6:2));camX=-3;
+  if(msgT>0)msgT-=dt;
+}
+
+// ---------- drawing ----------
+function person(x,col,cap,pose,t){const px=X(x),py=Y(0),u=s*.3;ctx.save();ctx.translate(px,py);ctx.lineCap='round';
+  ctx.strokeStyle='#2b2b2b';ctx.lineWidth=u*.55;ctx.beginPath();ctx.moveTo(-u*.5,0);ctx.lineTo(-u*.2,-u*3);ctx.moveTo(u*.5,0);ctx.lineTo(u*.2,-u*3);ctx.stroke();
+  ctx.fillStyle=col;ctx.fillRect(-u*.9,-u*6,u*1.8,u*3.2);
+  ctx.fillStyle='#e0b48a';ctx.beginPath();ctx.arc(0,-u*7,u*.85,0,7);ctx.fill();
+  ctx.fillStyle=cap;ctx.beginPath();ctx.arc(0,-u*7.2,u*.9,Math.PI,0);ctx.fill();ctx.fillRect(pose==='bat'?0:-u*1.5,-u*7.4,u*1.5,u*.35);
+  if(pose==='bat'){// bat swings from behind the head (150°) to the front (-30°)
+    const a=(swing<0?150:150-Math.min(1,swing)*180)*Math.PI/180;ctx.strokeStyle='#c99a5b';ctx.lineWidth=u*.45;
+    ctx.beginPath();ctx.moveTo(u*.6,-u*4.8);ctx.lineTo(u*.6+Math.cos(a)*u*4.3,-u*4.8-Math.sin(a)*u*4.3);ctx.stroke()}
+  else{const k=Math.min(1,t/1.1),a=(-60+k*250)*Math.PI/180;ctx.strokeStyle=col;ctx.lineWidth=u*.5;ctx.beginPath();ctx.moveTo(0,-u*5.5);ctx.lineTo(-Math.cos(a)*u*2.6,-u*5.5-Math.sin(a)*u*2.6);ctx.stroke()}
+  ctx.restore()}
+function draw(){
+  const g=ctx.createLinearGradient(0,0,0,gy());g.addColorStop(0,'#3d8fd1');g.addColorStop(1,'#bfe0f5');ctx.fillStyle=g;ctx.fillRect(0,0,vw,vh);
+  // stands beyond the fence
+  ctx.fillStyle='#4d5a66';ctx.fillRect(X(FENCE+2),Y(14),X(FENCE+80)-X(FENCE+2),Y(0)-Y(14));
+  ctx.fillStyle='rgba(255,255,255,.12)';for(let r=1;r<14;r+=2)ctx.fillRect(X(FENCE+2),Y(r),X(FENCE+80)-X(FENCE+2),Math.max(1,s*.25));
+  // grass with mow stripes
+  for(let x=-10;x<FENCE+80;x+=5){ctx.fillStyle=Math.floor(x/5)%2?'#4f9e47':'#58ab4f';ctx.fillRect(X(x),gy(),X(x+5)-X(x)+1,vh-gy())}
+  ctx.fillStyle='#c98b56';ctx.fillRect(X(-3),gy(),X(28)-X(-3),Math.max(4,s*.35));
+  ctx.fillStyle='#d79b66';ctx.beginPath();ctx.ellipse(X(MOUND),gy(),s*2.5,s*.35,0,Math.PI,0);ctx.fill();
+  // distance markers
+  ctx.fillStyle='rgba(255,255,255,.85)';ctx.font=`600 ${Math.max(11,Math.min(16,s*.6))}px system-ui`;ctx.textAlign='center';
+  for(let m=25;m<FENCE;m+=25){ctx.fillRect(X(m)-1,gy(),2,Math.max(6,s*.4));if(s*25>40)ctx.fillText(m+' m',X(m),gy()+Math.max(22,s*1.1))}
+  // fence
+  ctx.fillStyle='#2f6b3a';ctx.fillRect(X(FENCE),Y(3),Math.max(3,s*.4),Y(0)-Y(3));ctx.fillStyle='#f2c14e';ctx.fillRect(X(FENCE),Y(3),Math.max(3,s*.4),Math.max(2,s*.15));
+  ctx.fillStyle='#fff';ctx.fillText(FENCE+' m',X(FENCE)+s*.2,Y(3)-6);
+  if(best>0){ctx.fillStyle='rgba(242,193,78,.9)';ctx.fillRect(X(best)-1,gy()-s*1.2,3,s*1.2)}
+  person(MOUND,'#9c3b34','#9c3b34','pitch',phase==='windup'?pitcher.t:1.1);
+  person(-.2,'#e8e4da','#24476b','bat');
+  // ball + trail
+  ctx.fillStyle='rgba(255,255,255,.35)';trail.forEach(([x,y],i)=>{if(i%2)return;ctx.beginPath();ctx.arc(X(x),Y(y),Math.max(1.5,s*.06),0,7);ctx.fill()});
+  if(ball){const r=Math.max(3.5,s*.12);ctx.fillStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.ellipse(X(ball.x),gy(),r,r*.35,0,0,7);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(X(ball.x),Y(ball.y)-r*.3,r,0,7);ctx.fill();ctx.strokeStyle='#c0392b';ctx.lineWidth=1;ctx.beginPath();ctx.arc(X(ball.x)-r*.3,Y(ball.y)-r*.3,r*.7,-.8,.8);ctx.stroke()}
+  ctx.textAlign='center';
+  if(state==='play'&&phase==='windup'){ctx.font='600 15px system-ui';ctx.fillStyle='rgba(20,28,34,.75)';ctx.fillText(`Wurf ${pitchNo}: ${pitchKmh} km/h – tippen zum Schlagen`,vw/2,vh-14)}
+  if(msgT>0){ctx.globalAlpha=Math.min(1,msgT*3);ctx.font=`800 ${Math.min(52,vw/12)}px "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui`;ctx.lineWidth=6;ctx.strokeStyle='rgba(0,0,0,.45)';
+    ctx.strokeText(msg,vw/2,vh*.3);ctx.fillStyle='#fff';ctx.fillText(msg,vw/2,vh*.3);ctx.globalAlpha=1}
+}
+let last=performance.now();(function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;step(dt);draw();requestAnimationFrame(loop)})(last);
+
+cv.addEventListener('pointerdown',doSwing);
+addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();doSwing()}});
+const menu=L.menu({prefix:'baseball_',title:'Baseball',
+  text:'Home-Run-Derby: 10 Würfe. Tippe genau dann, wenn der Ball beim Schläger ankommt. Zu früh gibt flache Bälle, zu spät hohe. Über den Zaun bei 115 m ist ein Home Run.',
+  onStart:()=>newGame()});
+L.icons($('icons'),{onMenu:()=>{state='menu';menu.show()},orient:'landscape'});
+}
+</script>
+</body>
+</html>

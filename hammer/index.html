@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#3f7f3d">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Hammerwurf</title>
+<style>
+/* VOICE: powerful, rhythmic.  IDEA: the throwing circle and sector of an athletics stadium seen from the floodlight mast.
+   PICTURE: top-down circle with cage, the athlete spinning the hammer, the sector fan with distance arcs.
+   COLOUR/TYPE: stadium grass, white lines, orange cage net, steel hammer; condensed result digits.
+   LAYOUT: icons top-left, attempt card top-right, field full-screen, two big buttons (Schwung / Loslassen) at the bottom. */
+:root{color-scheme:dark;--lib-panel:#203320;--lib-edge:#355235;--lib-ink:#fff;--lib-muted:#cfe0cc;--lib-acc:#f28c28;--lib-acc-ink:#2a1705}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;background:#3f7f3d;color:#fff;font:15px/1.3 system-ui,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.tl{position:fixed;left:calc(8px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));display:flex;gap:6px;z-index:3}
+.card{position:fixed;right:calc(8px + env(safe-area-inset-right));top:calc(8px + env(safe-area-inset-top));z-index:3;background:rgba(18,32,18,.82);border-radius:12px;padding:6px 12px;display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:13px;color:#cfe0cc}
+.card b{color:#fff;font:700 18px/1.2 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;text-align:right;font-variant-numeric:tabular-nums}
+@media (orientation:portrait){.card{top:calc(62px + env(safe-area-inset-top))}}
+.btns{position:fixed;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom));display:flex;justify-content:space-between;padding:0 calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));z-index:3;pointer-events:none}
+.btns button{pointer-events:auto;min-width:130px;min-height:70px;border-radius:18px;border:0;font:800 20px "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;touch-action:manipulation;box-shadow:0 4px 0 rgba(0,0,0,.35)}
+.btns button:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.35)}
+#spin{background:#f2c14e;color:#2a1f05}#rel{background:#e85d3a;color:#fff}
+.btns button:disabled{opacity:.45}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="tl" id="icons"></div>
+<div class="card"><span>Versuch</span><b id="att">1/3</b><span>Letzter</span><b id="lastd">–</b><span>Bester</span><b id="bestd">–</b></div>
+<div class="btns"><button id="spin">Schwung</button><button id="rel" disabled>Loslassen</button></div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d');
+const RAD=Math.PI/180,SECT=17.46,RH=1.9,CIRC=1.0675,G=9.81,TRIES=3;
+let vw,vh,state='menu',phase='ready',phi=Math.PI,omega=0,revs=0,tapped=false,attempt=0,best=0,lastD=null,results=[],fly=null,marks=[],msg='',msgT=0,zoom=0,zt=0;
+let rec=+(L.store.get('hammer_best')||0);const stat=()=>L.store.set('stat_hammer',`Rekord ${rec.toFixed(2)} m`);stat();
+function fit(){const dpr=window.devicePixelRatio||1;vw=innerWidth;vh=innerHeight;cv.width=vw*dpr;cv.height=vh*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',fit);fit();
+// view: zoom 0 = close-up of the circle, 1 = whole sector
+function view(){const s0=Math.min(vw,vh)*.4/2.6,s1=Math.min((vh-150)/98,vw/(2*98*Math.sin(SECT*RAD)+30));const s=s0+(s1-s0)*zoom;
+  const cy0=vh*.52,cy1=vh-100;return{s,cx:vw/2,cy:cy0+(cy1-cy0)*zoom}}
+const P=(x,y,v)=>[v.cx+x*v.s,v.cy-y*v.s];
+function ui(){$('att').textContent=`${Math.min(attempt+1,TRIES)}/${TRIES}`;$('lastd').textContent=lastD===null?'–':lastD>0?`${lastD.toFixed(2)} m`:'ungültig';$('bestd').textContent=best?`${best.toFixed(2)} m`:'–';
+  $('spin').disabled=!(state==='play'&&(phase==='ready'||phase==='spin'));$('rel').disabled=!(state==='play'&&phase==='spin')}
+function say(t,d=1.6){msg=t;msgT=d}
+function newGame(){attempt=0;best=0;lastD=null;results=[];marks=[];state='play';L.orient('portrait');ready()}
+function ready(){phase='ready';phi=Math.PI;omega=0;revs=0;tapped=false;fly=null;zt=0;ui()}
+function inZone(){const a=((phi%(2*Math.PI))+2*Math.PI)%(2*Math.PI);return Math.abs(a-Math.PI)<35*RAD}
+function spinTap(){if(state!=='play')return;L.resume();
+  if(phase==='ready'){phase='spin';omega=3.6;say('Im gelben Bereich tippen!',1.4);ui();return}
+  if(phase!=='spin')return;
+  if(inZone()&&!tapped){tapped=true;omega=Math.min(15.5,omega+3.6*(1-omega/17));L.beep(300+omega*30,.06,'triangle',.05);L.vib(15)}
+  else{omega=Math.max(3,omega-1.2);L.beep(120,.08,'square',.04);say('Aus dem Takt',.8)}}
+function releaseH(){if(state!=='play'||phase!=='spin')return;
+  const dir=(phi/RAD+90)%360,off=((dir-90+540)%360)-180,v=omega*RH+.4,th=40*RAD,h0=1.7;
+  const tf=(v*Math.sin(th)+Math.sqrt((v*Math.sin(th))**2+2*G*h0))/G,d=v*Math.cos(th)*tf;
+  const valid=Math.abs(off)<=SECT,net=Math.abs(off)>70;
+  fly={t:0,tf:net?.25:tf,d:net?3.4:d+CIRC,ang:(90+off)*RAD,v,valid:valid&&!net,net,off};phase='fly';zt=net?0:1;L.noise(.15,.25);L.beep(200,.2,'sawtooth',.04,.5);ui()}
+function landed(){const f=fly;let res=0;
+  if(f.net){say('Ins Netz!',1.8)}
+  else if(!f.valid){say(`Ungültig – ${Math.abs(f.off).toFixed(0)}° neben dem Sektor`,2.2);marks.push({x:Math.cos(f.ang)*f.d,y:Math.sin(f.ang)*f.d,ok:false})}
+  else{res=f.d-CIRC;marks.push({x:Math.cos(f.ang)*f.d,y:Math.sin(f.ang)*f.d,ok:true,d:res});say(`${res.toFixed(2)} m`,2.4);L.noise(.3,.4);L.vib(50);if(res>best)best=res}
+  lastD=res;results.push(res?res.toFixed(2):'x');attempt++;phase='land';ui();
+  setTimeout(()=>{if(state!=='play')return;if(attempt>=TRIES)finish();else ready()},2600)}
+function finish(){state='over';ui();const newRec=best>rec;if(newRec){rec=best;L.store.set('hammer_best',rec)}stat();
+  menu.show(newRec?'Neuer Rekord!':'Wettkampf beendet',`Beste Weite ${best?best.toFixed(2)+' m':'keine gültige'} (${results.join(' · ')}). Rekord: ${rec.toFixed(2)} m. Weltrekord der Männer: 86,74 m.`,'Noch einmal')}
+function step(dt){
+  zoom+=(zt-zoom)*Math.min(1,dt*2.2);if(msgT>0)msgT-=dt;
+  if(phase==='spin'){const before=Math.floor(phi/(2*Math.PI));phi+=omega*dt;const after=Math.floor(phi/(2*Math.PI));
+    if(after>before){revs++;if(!tapped)omega=Math.max(3,omega-.4);tapped=false;
+      if(revs>=9){phase='fly';fly={t:0,tf:.01,d:0,ang:0,net:true};say('Zu viele Drehungen – Fehlversuch',2);setTimeout(()=>{fly=null;lastD=0;results.push('x');attempt++;phase='land';ui();setTimeout(()=>{if(state==='play'){attempt>=TRIES?finish():ready()}},1500)},50)}}}
+  if(phase==='fly'&&fly&&!fly.net||phase==='fly'&&fly&&fly.net&&fly.tf>.1){fly.t+=dt*(fly.net?1:1.6);if(fly.t>=fly.tf){fly.t=fly.tf;landed()}}
+}
+function draw(){const v=view();
+  ctx.fillStyle='#3f7f3d';ctx.fillRect(0,0,vw,vh);
+  for(let i=-20;i<20;i++){ctx.fillStyle=i%2?'#468a43':'#3f7f3d';const[x,y]=P(-200,i*8,v);ctx.fillRect(0,y-8*v.s,vw,8*v.s)}
+  // sector lines + distance arcs
+  ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=Math.max(1.5,v.s*.06);
+  for(const a of[90-SECT,90+SECT]){const[x0,y0]=P(Math.cos(a*RAD)*CIRC,Math.sin(a*RAD)*CIRC,v),[x1,y1]=P(Math.cos(a*RAD)*110,Math.sin(a*RAD)*110,v);ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke()}
+  ctx.font=`600 ${Math.max(11,Math.min(15,v.s*1.6))}px system-ui`;ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,.85)';
+  for(let d=20;d<=90;d+=10){ctx.strokeStyle=d%50?'rgba(255,255,255,.35)':'rgba(255,255,255,.7)';ctx.beginPath();ctx.arc(v.cx,v.cy,d*v.s,(-90-SECT)*RAD,(-90+SECT)*RAD);ctx.stroke();
+    if(zoom>.5){const[x,y]=P(0,d,v);ctx.fillText(d+' m',x,y-4)}}
+  if(rec&&zoom>.5){ctx.strokeStyle='rgba(242,193,78,.8)';ctx.setLineDash([6,6]);ctx.beginPath();ctx.arc(v.cx,v.cy,(rec+CIRC)*v.s,(-90-SECT)*RAD,(-90+SECT)*RAD);ctx.stroke();ctx.setLineDash([])}
+  // landing marks
+  marks.forEach(m=>{const[x,y]=P(m.x,m.y,v);ctx.fillStyle=m.ok?'#fff':'#ff5a4a';ctx.beginPath();ctx.arc(x,y,Math.max(4,v.s*.35),0,7);ctx.fill();
+    if(m.ok&&zoom>.5){ctx.fillStyle='#fff';ctx.fillText(m.d.toFixed(2),x+28,y+4)}});
+  // circle + cage
+  const[cx,cy]=P(0,0,v);ctx.fillStyle='#9aa0a6';ctx.beginPath();ctx.arc(cx,cy,CIRC*v.s,0,7);ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=Math.max(2,v.s*.06);ctx.stroke();
+  ctx.strokeStyle='rgba(242,140,40,.9)';ctx.lineWidth=Math.max(2,v.s*.12);ctx.beginPath();ctx.arc(cx,cy,3.6*v.s,(-90+38)*RAD,(-90-38+360)*RAD);ctx.stroke();
+  if(phase==='ready'||phase==='spin'){ctx.fillStyle='rgba(242,193,78,.35)';ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,(RH+.4)*v.s,(180-35)*RAD,(180+35)*RAD);ctx.fill()}
+  // athlete + hammer
+  if(phase!=='fly'&&phase!=='land'){const hx=Math.cos(phi)*RH,hy=Math.sin(phi)*RH,[bx,by]=P(hx,hy,v),[gx,gy]=P(Math.cos(phi)*.55,Math.sin(phi)*.55,v);
+    ctx.strokeStyle='#d0d4d8';ctx.lineWidth=Math.max(1,v.s*.03);ctx.beginPath();ctx.moveTo(gx,gy);ctx.lineTo(bx,by);ctx.stroke();
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(-phi);ctx.fillStyle='#24476b';ctx.beginPath();ctx.ellipse(0,0,.22*v.s,.42*v.s,0,0,7);ctx.fill();
+    ctx.strokeStyle='#e0b48a';ctx.lineWidth=Math.max(2,v.s*.09);ctx.beginPath();ctx.moveTo(0,-.32*v.s);ctx.lineTo(.55*v.s,0);ctx.moveTo(0,.32*v.s);ctx.lineTo(.55*v.s,0);ctx.stroke();
+    ctx.fillStyle='#3a2a1e';ctx.beginPath();ctx.arc(0,0,.15*v.s,0,7);ctx.fill();ctx.restore();
+    ctx.fillStyle='#4a4f55';ctx.beginPath();ctx.arc(bx,by,Math.max(5,.12*v.s),0,7);ctx.fill();ctx.fillStyle='rgba(255,255,255,.5)';ctx.beginPath();ctx.arc(bx-2,by-2,Math.max(1.5,.04*v.s),0,7);ctx.fill();
+    if(phase==='spin'){const dir=phi+Math.PI/2,ok=Math.abs((((dir/RAD-90)+540)%360)-180)<=SECT;ctx.strokeStyle=ok?'rgba(80,255,140,.9)':'rgba(255,255,255,.25)';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(bx,by);ctx.lineTo(bx+Math.cos(dir)*v.s*1.2,by-Math.sin(dir)*v.s*1.2);ctx.stroke()}}
+  else if(fly){const k=fly.t/(fly.tf||1),d=CIRC+(fly.d-CIRC)*k,[x,y]=P(Math.cos(fly.ang)*d,Math.sin(fly.ang)*d,v),h=fly.net?0:4*k*(1-k)*14;
+    ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.arc(x,y,Math.max(4,.12*v.s),0,7);ctx.fill();
+    ctx.fillStyle='#4a4f55';ctx.beginPath();ctx.arc(x-h*.6,y-h*2,Math.max(4,.12*v.s)*(1+h/30),0,7);ctx.fill()}
+  // speed + revs
+  if(phase==='spin'){ctx.textAlign='center';ctx.font='700 18px system-ui';ctx.fillStyle='#fff';ctx.fillText(`${Math.round((omega*RH+.4)*3.6)} km/h · Drehung ${revs+1}`,vw/2,vh-110);
+    const w=Math.min(260,vw*.6);ctx.fillStyle='rgba(0,0,0,.35)';ctx.fillRect(vw/2-w/2,vh-100,w,8);ctx.fillStyle='#f2c14e';ctx.fillRect(vw/2-w/2,vh-100,w*Math.min(1,(omega-3)/12.5),8)}
+  if(phase==='ready'&&state==='play'){ctx.textAlign='center';ctx.font='600 15px system-ui';ctx.fillStyle='#fff';ctx.fillText('„Schwung“ startet die Drehung',vw/2,vh-104)}
+  if(msgT>0){ctx.globalAlpha=Math.min(1,msgT*3);ctx.textAlign='center';ctx.font=`800 ${Math.min(42,vw/11)}px "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui`;ctx.lineWidth=6;ctx.strokeStyle='rgba(0,0,0,.45)';
+    const y=vh*.24;ctx.strokeText(msg,vw/2,y);ctx.fillStyle='#fff';ctx.fillText(msg,vw/2,y);ctx.globalAlpha=1}
+}
+let last=performance.now();(function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;if(state==='play')step(dt);draw();requestAnimationFrame(loop)})(last);
+$('spin').addEventListener('pointerdown',e=>{e.preventDefault();spinTap()});
+$('rel').addEventListener('pointerdown',e=>{e.preventDefault();releaseH()});
+addEventListener('keydown',e=>{if(e.repeat)return;if(e.key===' '){e.preventDefault();spinTap()}else if(e.key==='Enter'){e.preventDefault();releaseH()}});
+const menu=L.menu({prefix:'hammer_',title:'Hammerwurf',
+  text:'Tippe „Schwung“ immer dann, wenn der Hammer durch den gelben Bereich saust – so wird er schneller. Tippe „Loslassen“, wenn der grüne Pfeil in den Sektor zeigt. 3 Versuche, nach 8 Drehungen musst du werfen.',
+  onStart:()=>newGame()});
+L.icons($('icons'),{onMenu:()=>{state='menu';ui();menu.show()}});
+ui();
+}
+</script>
+</body>
+</html>

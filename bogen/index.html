@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#a9d3ea">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Bogenschießen</title>
+<style>
+/* VOICE: focused, quiet tension.  IDEA: an outdoor archery range at the edge of a forest, looking through the sight.
+   PICTURE: the straw boss with the ten-ring face, the sight pin, arrows sticking in the target.
+   COLOUR/TYPE: pale sky, forest greens, the classic gold-red-blue-black-white face; condensed scoring digits.
+   LAYOUT: icons top-left, score card top-right, target centre, wind flag, draw bar bottom. */
+:root{color-scheme:dark;--lib-panel:#22301f;--lib-edge:#3a5034;--lib-ink:#fff;--lib-muted:#cfdac9;--lib-acc:#f5d33f;--lib-acc-ink:#2a2205}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;background:#a9d3ea;color:#fff;font:15px/1.3 system-ui,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.tl{position:fixed;left:calc(8px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));display:flex;gap:6px;z-index:3}
+.card{position:fixed;right:calc(8px + env(safe-area-inset-right));top:calc(8px + env(safe-area-inset-top));z-index:3;background:rgba(24,34,22,.82);border-radius:12px;padding:6px 12px;display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:13px;color:#cfdac9}
+.card b{color:#fff;font:700 18px/1.2 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;text-align:right;font-variant-numeric:tabular-nums}
+@media (orientation:portrait){.card{top:calc(62px + env(safe-area-inset-top))}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="tl" id="icons"></div>
+<div class="card"><span>Passe</span><b id="end">1/4</b><span>Entfernung</span><b id="dist">18 m</b><span>Diese Passe</span><b id="arrows">–</b><span>Gesamt</span><b id="tot">0</b></div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d');
+const DISTS=[18,30,50,70],PER=3,FACE=.61;// Radius der Auflage in Metern
+let vw,vh,state='menu',end=0,shot=0,total=0,endScores=[],hits=[],wind=0,aim={x:0,y:0},hold=null,flight=null,msg='',msgT=0,t=0,cx=0,cy=0,R=100;
+let rec=+(L.store.get('bogen_best')||0);const stat=()=>L.store.set('stat_bogen',`Rekord ${rec} von 120 Ringen`);stat();
+function fit(){const dpr=window.devicePixelRatio||1;vw=innerWidth;vh=innerHeight;cv.width=vw*dpr;cv.height=vh*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);layout()}
+function layout(){cx=vw/2;cy=vh*(vw>vh?.48:.46);const d=DISTS[Math.min(end,3)];R=Math.min(vw,vh)*.42*Math.pow(18/d,.85)}
+addEventListener('resize',fit);fit();
+const toM=px=>px*FACE/R;
+function ui(){$('end').textContent=`${Math.min(end+1,4)}/4`;$('dist').textContent=`${DISTS[Math.min(end,3)]} m`;$('arrows').textContent=endScores.length?endScores.map(s=>s===11?'X':s||'M').join(' '):'–';$('tot').textContent=total}
+function say(s,d=1.5){msg=s;msgT=d}
+function newGame(){end=0;total=0;state='play';L.orient(vw>vh?'landscape':'portrait');startEnd()}
+function startEnd(){shot=0;endScores=[];hits=[];wind=Math.round((Math.random()*2-1)*6*10)/10;aim={x:(Math.random()-.5)*R*.3,y:(Math.random()-.5)*R*.3};layout();ui();
+  say(`${DISTS[end]} m · ${wind===0?'windstill':`Wind ${Math.abs(wind)} m/s ${wind<0?'von rechts':'von links'}`}`,2)}
+function sway(h){const tt=h.t,f=.05+Math.max(0,tt-2.5)*.09;// zittert stärker, je länger gehalten
+  return{x:(Math.sin(tt*1.3)*.6+Math.sin(tt*3.1+1)*.4)*R*f,y:(Math.cos(tt*1.1)*.6+Math.sin(tt*2.7)*.4)*R*f*.8}}
+function release(){const h=hold;hold=null;if(!h)return;const sw=sway(h),d=DISTS[end];
+  let mx=toM(aim.x+sw.x),my=toM(aim.y+sw.y);
+  if(h.draw<1)my+=(1-h.draw)*1.2;// nicht voll ausgezogen: Pfeil fällt ab
+  mx+=wind*Math.pow(d/70,1.5)*.05;mx+=(Math.random()-.5)*.02;my+=(Math.random()-.5)*.02;
+  flight={mx,my,t:0,dur:.25+d/110};L.noise(.08,.2);L.beep(180,.12,'triangle',.04,1.8)}
+function land(){const{mx,my}=flight;flight=null;const r=Math.hypot(mx,my);let sc=r<FACE?10-Math.floor(r/(FACE/10)):0;if(r<FACE/20)sc=11;
+  hits.push([mx,my]);endScores.push(sc);total+=Math.min(10,sc);shot++;ui();L.beep(sc?120:80,.08,'square',.05);if(sc>=10)L.vib(30);
+  say(sc===11?'X – Mitte!':sc?`${sc} Ringe`:'Daneben',1.1);
+  if(shot>=PER){setTimeout(()=>{end++;if(end>=4)finish();else startEnd()},1500)}}
+function finish(){state='over';if(total>rec){rec=total;L.store.set('bogen_best',rec)}stat();
+  menu.show(total>=rec&&total>0?'Neuer Rekord!':'Wettkampf beendet',`${total} von 120 Ringen. Rekord: ${rec}.`,'Noch einmal')}
+
+function ringPath(r){ctx.beginPath();ctx.arc(cx,cy,r,0,7)}
+function draw(dt){
+  const sky=ctx.createLinearGradient(0,0,0,vh*.6);sky.addColorStop(0,'#86bfe0');sky.addColorStop(1,'#d8ecf5');ctx.fillStyle=sky;ctx.fillRect(0,0,vw,vh);
+  // forest line
+  ctx.fillStyle='#4f7d4a';ctx.beginPath();ctx.moveTo(0,cy-R*.4);for(let x=0;x<=vw;x+=16)ctx.lineTo(x,cy-R*.35-Math.abs(Math.sin(x*.07))*28-Math.sin(x*.013)*18);ctx.lineTo(vw,vh);ctx.lineTo(0,vh);ctx.fill();
+  ctx.fillStyle='#78b062';ctx.fillRect(0,cy+R*.95,vw,vh);ctx.fillStyle='#6aa356';for(let i=0;i<6;i++)ctx.fillRect(0,cy+R*.95+i*(vh-cy)/6,vw,2);
+  // target stand + straw boss
+  ctx.strokeStyle='#6b4a2a';ctx.lineWidth=Math.max(3,R*.06);ctx.beginPath();ctx.moveTo(cx-R*.7,cy+R*.6);ctx.lineTo(cx-R*.95,cy+R*1.45);ctx.moveTo(cx+R*.7,cy+R*.6);ctx.lineTo(cx+R*.95,cy+R*1.45);ctx.stroke();
+  ctx.fillStyle='#d9b96a';ctx.beginPath();ctx.arc(cx,cy,R*1.18,0,7);ctx.fill();ctx.strokeStyle='rgba(120,90,30,.35)';ctx.lineWidth=1;for(let i=0;i<10;i++){ctx.beginPath();ctx.arc(cx,cy,R*(1.02+i*.016),0,7);ctx.stroke()}
+  const cols=['#f4f4f4','#f4f4f4','#232323','#232323','#2c7fc2','#2c7fc2','#d6332f','#d6332f','#f5d33f','#f5d33f'];
+  for(let i=0;i<10;i++){ringPath(R*(10-i)/10);ctx.fillStyle=cols[i];ctx.fill();ctx.strokeStyle=i===2||i===3?'#ddd':'rgba(0,0,0,.45)';ctx.lineWidth=1;ctx.stroke()}
+  ringPath(R/20);ctx.stroke();ctx.fillStyle='#222';ctx.fillRect(cx-1,cy-1,2,2);
+  // arrows in the target
+  hits.forEach(([mx,my])=>{const x=cx+mx/FACE*R,y=cy+my/FACE*R;ctx.fillStyle='#111';ctx.beginPath();ctx.arc(x,y,Math.max(2,R*.025),0,7);ctx.fill();
+    ctx.strokeStyle='#e85d75';ctx.lineWidth=Math.max(2,R*.03);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+R*.04,y-R*.07);ctx.stroke()});
+  // wind flag
+  const fx=Math.max(30,vw*.08),fy=vh-150;ctx.strokeStyle='#eee';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(fx,fy+60);ctx.lineTo(fx,fy-20);ctx.stroke();
+  const wl=Math.abs(wind)/6,wd=Math.sign(wind)||1,wav=Math.sin(t*8)*4*wl;ctx.fillStyle='#f28c28';ctx.beginPath();ctx.moveTo(fx,fy-20);ctx.lineTo(fx+wd*(10+40*wl),fy-14+wav+(1-wl)*14);ctx.lineTo(fx,fy-4);ctx.fill();
+  ctx.fillStyle='rgba(24,34,22,.85)';ctx.font='700 13px system-ui';ctx.textAlign='center';ctx.fillText(wind?`${Math.abs(wind)} m/s`:'0 m/s',fx,fy+78);
+  // flying arrow
+  if(flight){const k=flight.t/flight.dur,x=cx+flight.mx/FACE*R,y=cy+flight.my/FACE*R,sz=(1-k)*60+6;
+    ctx.strokeStyle='#5a3b1f';ctx.lineWidth=Math.max(2,4*(1-k));ctx.beginPath();ctx.moveTo(x,y+sz*.6);ctx.lineTo(x,y+sz*.6+sz);ctx.stroke()}
+  // sight
+  if(state==='play'&&!flight&&shot<PER){const sw=hold?sway(hold):{x:0,y:0},x=cx+aim.x+sw.x,y=cy+aim.y+sw.y;
+    ctx.strokeStyle=hold&&hold.draw>=1?'#22ff88':'rgba(255,255,255,.9)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,14,0,7);ctx.moveTo(x-24,y);ctx.lineTo(x-6,y);ctx.moveTo(x+6,y);ctx.lineTo(x+24,y);ctx.moveTo(x,y-24);ctx.lineTo(x,y-6);ctx.moveTo(x,y+6);ctx.lineTo(x,y+24);ctx.stroke();
+    ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.arc(x,y,2.5,0,7);ctx.fill();
+    const bw=Math.min(260,vw*.6),bx=vw/2-bw/2,by=vh-30;ctx.fillStyle='rgba(24,34,22,.8)';ctx.fillRect(bx-4,by-4,bw+8,16);
+    ctx.fillStyle=hold&&hold.draw>=1?'#22c55e':'#f5d33f';ctx.fillRect(bx,by,bw*(hold?hold.draw:0),8);
+    ctx.fillStyle='rgba(24,34,22,.85)';ctx.font='600 14px system-ui';ctx.fillText(hold?(hold.draw<1?'Spannen …':'Zielen – loslassen zum Schießen'):'Finger auflegen und halten zum Spannen, ziehen zum Zielen',vw/2,by-12)}
+  if(msgT>0){ctx.globalAlpha=Math.min(1,msgT*3);ctx.font=`800 ${Math.min(40,vw/12)}px "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui`;ctx.lineWidth=6;ctx.strokeStyle='rgba(0,0,0,.4)';
+    const y=vw>vh?vh*.12+30:vh*.2;ctx.strokeText(msg,vw/2,y);ctx.fillStyle='#fff';ctx.fillText(msg,vw/2,y);ctx.globalAlpha=1}
+}
+let last=performance.now();
+(function loop(ts){const dt=Math.min(.05,(ts-last)/1000);last=ts;t+=dt;if(msgT>0)msgT-=dt;
+  if(hold){hold.t+=dt;hold.draw=Math.min(1,hold.draw+dt/.7);if(hold.draw===1&&!hold.full){hold.full=true;L.beep(520,.04,'sine',.03)}}
+  if(flight){flight.t+=dt;if(flight.t>=flight.dur)land()}
+  draw(dt);requestAnimationFrame(loop)})(last);
+
+cv.addEventListener('pointerdown',e=>{if(state!=='play'||flight||shot>=PER)return;L.resume();hold={t:0,draw:0,px:e.clientX,py:e.clientY};try{cv.setPointerCapture(e.pointerId)}catch(err){}});
+cv.addEventListener('pointermove',e=>{if(!hold)return;const k=.55;aim.x+=(e.clientX-hold.px)*k;aim.y+=(e.clientY-hold.py)*k;hold.px=e.clientX;hold.py=e.clientY;
+  aim.x=Math.max(-R*1.6,Math.min(R*1.6,aim.x));aim.y=Math.max(-R*1.6,Math.min(R*1.6,aim.y))});
+cv.addEventListener('pointerup',release);cv.addEventListener('pointercancel',()=>{hold=null});
+addEventListener('keydown',e=>{if(state!=='play')return;const st=e.shiftKey?1:4;
+  if(e.key==='ArrowLeft')aim.x-=st;else if(e.key==='ArrowRight')aim.x+=st;else if(e.key==='ArrowUp')aim.y-=st;else if(e.key==='ArrowDown')aim.y+=st;
+  else if(e.key===' '&&!e.repeat&&!hold&&!flight&&shot<PER){e.preventDefault();hold={t:0,draw:0,px:0,py:0}}});
+addEventListener('keyup',e=>{if(e.key===' '&&hold){e.preventDefault();release()}});
+const menu=L.menu({prefix:'bogen_',title:'Bogenschießen',
+  text:'4 Passen à 3 Pfeile auf 18, 30, 50 und 70 m. Finger auflegen und halten spannt den Bogen, Ziehen verschiebt das Visier, Loslassen schießt. Halte nicht zu lange, sonst zittert der Arm. Wind lenkt den Pfeil ab, also etwas gegen den Wind zielen.',
+  onStart:()=>newGame()});
+L.icons($('icons'),{onMenu:()=>{state='menu';menu.show()}});
+fit();
+}
+</script>
+</body>
+</html>

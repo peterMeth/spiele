@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#f3b26b">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Tontauben</title>
+<style>
+/* VOICE: brisk, arcade, a hint of country fair.  IDEA: a clay shooting ground at golden hour over rolling hills.
+   PICTURE: hills, poplars, a wooden fence, orange clays arcing across the sky and shattering.
+   COLOUR/TYPE: warm evening sky, layered hill greens, clay orange, brass shells; condensed score digits.
+   LAYOUT: icons top-left, score + time top-right, shells and reload bottom-right, the whole sky is the target area. */
+:root{color-scheme:dark;--lib-panel:#2d2a22;--lib-edge:#4a4535;--lib-ink:#fff;--lib-muted:#e3dccb;--lib-acc:#e8792b;--lib-acc-ink:#fff}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;background:#f3b26b;color:#fff;font:15px/1.3 system-ui,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+.tl{position:fixed;left:calc(8px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));display:flex;gap:6px;z-index:3}
+.card{position:fixed;right:calc(8px + env(safe-area-inset-right));top:calc(8px + env(safe-area-inset-top));z-index:3;background:rgba(40,34,24,.8);border-radius:12px;padding:6px 12px;display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:13px;color:#e3dccb}
+.card b{color:#fff;font:700 18px/1.2 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;text-align:right;font-variant-numeric:tabular-nums}
+@media (orientation:portrait){.card{top:calc(62px + env(safe-area-inset-top))}}
+#reload{position:fixed;right:calc(12px + env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom));z-index:3;min-width:120px;min-height:64px;border-radius:16px;border:0;background:rgba(40,34,24,.82);color:#fff;
+  font:700 15px system-ui,Roboto,sans-serif;display:flex;align-items:center;gap:10px;padding:0 14px;touch-action:manipulation}
+#reload .sh{display:flex;gap:5px}
+#reload .sh i{width:12px;height:30px;border-radius:3px;background:linear-gradient(#c0392b 0 70%,#d4a43a 70%)}
+#reload .sh i.e{background:rgba(255,255,255,.15)}
+#reload.need{background:#e8792b;animation:p .6s infinite alternate}
+@keyframes p{to{transform:scale(1.06)}}
+@media(prefers-reduced-motion:reduce){#reload.need{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="tl" id="icons"></div>
+<div class="card"><span>Punkte</span><b id="sc">0</b><span>Zeit</span><b id="tm">90</b><span>Treffer</span><b id="hits">0</b></div>
+<button id="reload" aria-label="Nachladen"><span class="sh" id="shells"><i></i><i></i></span>Nachladen</button>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d');
+const TIME=90;
+let vw,vh,state='menu',score=0,time=TIME,shells=2,reloading=0,clays=[],shards=[],pops=[],shots=0,hitN=0,spawnT=0,cross=null,flash=0,hills=[];
+let rec=+(L.store.get('tontauben_best')||0);const stat=()=>L.store.set('stat_tontauben',`Rekord ${rec} Punkte`);stat();
+function fit(){const dpr=window.devicePixelRatio||1;vw=innerWidth;vh=innerHeight;cv.width=vw*dpr;cv.height=vh*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  hills=[.62,.7,.78].map((h,i)=>Array.from({length:30},(_,k)=>vh*h-Math.sin(k*.7+i*2)*vh*.03-Math.sin(k*.23+i)*vh*.04))}
+addEventListener('resize',fit);fit();
+function ui(){$('sc').textContent=score;$('tm').textContent=Math.ceil(time);$('hits').textContent=hitN;
+  $('shells').innerHTML=[0,1].map(i=>`<i class="${i<shells?'':'e'}"></i>`).join('');$('reload').classList.toggle('need',shells===0&&state==='play')}
+function newGame(){score=0;time=TIME;shells=2;reloading=0;clays=[];shards=[];pops=[];shots=0;hitN=0;spawnT=.6;state='play';L.orient('landscape');ui()}
+function spawn(){
+  const side=Math.random()<.5?-1:1,d=.55+Math.random()*.6,gold=Math.random()<.07,big=Math.min(vw,vh);
+  const x=side<0?-30:vw+30,y=vh*(.62+Math.random()*.12),vx=-side*(vw*(.28+Math.random()*.22))*(gold?1.5:1)*(1.15-d*.3),vy=-big*(.75+Math.random()*.35);
+  clays.push({x,y,vx,vy,d,gold,r:big*.028*d,rot:Math.random()*6,spin:(Math.random()-.5)*12});
+  L.beep(90,.12,'sawtooth',.03,.5);
+}
+function shoot(px,py){if(state!=='play')return;L.resume();cross={x:px,y:py,t:.4};
+  if(reloading>0)return;if(shells<=0){L.beep(300,.04,'square',.03);pops.push({x:px,y:py,t:1,txt:'Nachladen!'});return}
+  shells--;shots++;flash=.08;L.noise(.25,.45);L.vib(20);
+  let n=0;for(const c of clays){if(c.dead)continue;const rr=c.r*1.35+Math.min(vw,vh)*.018;if(Math.hypot(c.x-px,c.y-py)<rr){c.dead=true;n++;
+    const p=c.gold?50:c.d<.75?25:c.d<.95?15:10;score+=p;hitN++;pops.push({x:c.x,y:c.y,t:1,txt:'+'+p,gold:c.gold});
+    for(let i=0;i<14;i++)shards.push({x:c.x,y:c.y,vx:(Math.random()-.5)*300+c.vx*.3,vy:(Math.random()-.8)*300,r:c.r*(.25+Math.random()*.35),t:1,rot:Math.random()*6,gold:c.gold})}}
+  if(n>=2){score+=25;pops.push({x:px,y:py-30,t:1.3,txt:'Doppel! +25',gold:true});L.beep(880,.15,'triangle',.06,1.4)}
+  else if(n)L.beep(1300,.04,'triangle',.04);
+  ui()}
+function reload(){if(state!=='play'||shells===2||reloading>0)return;reloading=.55;L.beep(400,.05,'square',.04);setTimeout(()=>L.beep(520,.05,'square',.04),250)}
+function finish(){state='over';const acc=shots?Math.round(hitN/shots*100):0;const nr=score>rec;if(nr){rec=score;L.store.set('tontauben_best',rec)}stat();ui();
+  menu.show(nr?'Neuer Rekord!':'Zeit um!',`${score} Punkte · ${hitN} Treffer bei ${shots} Schüssen (${acc} %). Rekord: ${rec}.`,'Noch eine Runde')}
+function step(dt){
+  time-=dt;if(time<=0){time=0;finish();return}
+  if(reloading>0){reloading-=dt;if(reloading<=0){shells=2;ui()}}
+  spawnT-=dt;const rate=1.6-(1-time/TIME)*.9;if(spawnT<=0){spawn();if(Math.random()<.3)setTimeout(()=>state==='play'&&spawn(),150);spawnT=rate*(.6+Math.random()*.8)}
+  const g=Math.min(vw,vh)*.55;
+  clays.forEach(c=>{c.vy+=g*dt;c.x+=c.vx*dt;c.y+=c.vy*dt;c.rot+=c.spin*dt});clays=clays.filter(c=>!c.dead&&c.y<vh+50&&c.x>-80&&c.x<vw+80);
+  shards.forEach(s=>{s.vy+=g*1.4*dt;s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt*.9;s.rot+=dt*8});shards=shards.filter(s=>s.t>0);
+  pops.forEach(p=>{p.t-=dt;p.y-=30*dt});pops=pops.filter(p=>p.t>0);
+  if(flash>0)flash-=dt;if(cross)cross.t-=dt;
+  $('tm').textContent=Math.ceil(time);
+}
+function clay(x,y,r,rot,gold,a=1){ctx.save();ctx.translate(x,y);ctx.rotate(rot*.15);ctx.globalAlpha=a;
+  ctx.fillStyle=gold?'#f4cf45':'#e8792b';ctx.beginPath();ctx.ellipse(0,0,r,r*.42,0,0,7);ctx.fill();
+  ctx.fillStyle=gold?'#c99a1d':'#b8561c';ctx.beginPath();ctx.ellipse(0,r*.12,r*.9,r*.25,0,0,Math.PI);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.35)';ctx.beginPath();ctx.ellipse(-r*.25,-r*.12,r*.35,r*.1,0,0,7);ctx.fill();ctx.restore()}
+function draw(){
+  const sky=ctx.createLinearGradient(0,0,0,vh*.75);sky.addColorStop(0,'#7fb3d9');sky.addColorStop(.6,'#f6cf96');sky.addColorStop(1,'#f3b26b');ctx.fillStyle=sky;ctx.fillRect(0,0,vw,vh);
+  ctx.fillStyle='rgba(255,240,200,.85)';ctx.beginPath();ctx.arc(vw*.78,vh*.5,Math.min(vw,vh)*.07,0,7);ctx.fill();
+  const cols=['#8fae7a','#6e9a5c','#557f45'];
+  hills.forEach((pts,i)=>{ctx.fillStyle=cols[i];ctx.beginPath();ctx.moveTo(0,vh);pts.forEach((y,k)=>ctx.lineTo(k/(pts.length-1)*vw,y));ctx.lineTo(vw,vh);ctx.fill();
+    if(i===1){ctx.fillStyle='#476d3a';for(let k=2;k<pts.length;k+=5){const x=k/(pts.length-1)*vw,y=pts[k];ctx.beginPath();ctx.ellipse(x,y-vh*.05,vh*.018,vh*.06,0,0,7);ctx.fill()}}});
+  // fence
+  const fy=vh*.86;ctx.fillStyle='#7a5a3a';ctx.fillRect(0,fy,vw,6);ctx.fillRect(0,fy+18,vw,6);for(let x=10;x<vw;x+=60)ctx.fillRect(x,fy-10,8,vh-fy+10);
+  // trap houses
+  ctx.fillStyle='#5b4632';ctx.fillRect(-10,vh*.7,40,26);ctx.fillRect(vw-30,vh*.7,40,26);
+  clays.forEach(c=>clay(c.x,c.y,c.r,c.rot,c.gold));
+  shards.forEach(s=>{ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.rot);ctx.globalAlpha=Math.max(0,s.t);ctx.fillStyle=s.gold?'#f4cf45':'#d9682a';ctx.beginPath();ctx.moveTo(-s.r,0);ctx.lineTo(s.r*.6,-s.r*.5);ctx.lineTo(s.r*.4,s.r*.6);ctx.fill();ctx.restore()});
+  ctx.globalAlpha=1;ctx.textAlign='center';
+  pops.forEach(p=>{ctx.globalAlpha=Math.min(1,p.t*2);ctx.font='800 22px "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui';ctx.lineWidth=4;ctx.strokeStyle='rgba(0,0,0,.4)';ctx.strokeText(p.txt,p.x,p.y);ctx.fillStyle=p.gold?'#ffe066':'#fff';ctx.fillText(p.txt,p.x,p.y)});ctx.globalAlpha=1;
+  if(cross&&cross.t>0||cross&&cross.mouse){const c=cross;ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=2;const r=Math.min(vw,vh)*.035;ctx.beginPath();ctx.arc(c.x,c.y,r,0,7);ctx.moveTo(c.x-r*1.6,c.y);ctx.lineTo(c.x-r*.5,c.y);ctx.moveTo(c.x+r*.5,c.y);ctx.lineTo(c.x+r*1.6,c.y);ctx.moveTo(c.x,c.y-r*1.6);ctx.lineTo(c.x,c.y-r*.5);ctx.moveTo(c.x,c.y+r*.5);ctx.lineTo(c.x,c.y+r*1.6);ctx.stroke()}
+  if(flash>0){ctx.fillStyle=`rgba(255,250,230,${flash*3})`;ctx.fillRect(0,0,vw,vh)}
+  if(state==='play'&&time>TIME-3){ctx.font='700 18px system-ui';ctx.fillStyle='rgba(40,34,24,.85)';ctx.fillText('Tippe auf die Tauben – nach 2 Schuss nachladen',vw/2,vh*.42)}
+}
+let last=performance.now();(function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;if(state==='play')step(dt);draw();requestAnimationFrame(loop)})(last);
+cv.addEventListener('pointerdown',e=>{if(e.button===2){reload();return}shoot(e.clientX,e.clientY)});
+cv.addEventListener('pointermove',e=>{if(e.pointerType==='mouse')cross={x:e.clientX,y:e.clientY,t:1,mouse:true}});
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+$('reload').addEventListener('pointerdown',e=>{e.preventDefault();reload()});
+addEventListener('keydown',e=>{if(e.key===' '||e.key==='r'||e.key==='R'){e.preventDefault();reload()}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='play'){state='pause';menu.show('Pause',`${score} Punkte, noch ${Math.ceil(time)} s.`,'Weiter',false)}});
+const menu=L.menu({prefix:'tontauben_',title:'Tontauben',
+  text:'90 Sekunden: Tippe auf die fliegenden Tontauben. Die Flinte hat 2 Schuss, dann „Nachladen“ tippen (am PC: Leertaste oder Rechtsklick). Kleine, ferne Tauben bringen mehr Punkte, goldene 50, zwei mit einem Schuss +25.',
+  onStart:()=>{if(state==='pause'){state='play';return}newGame()}});
+L.icons($('icons'),{onMenu:()=>{if(state==='play'){state='pause';menu.show('Pause',`${score} Punkte, noch ${Math.ceil(time)} s.`,'Weiter',false)}else menu.show()},orient:'landscape'});
+ui();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#86c3e6">
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icons/icon-192.png">
+<title>Golf</title>
+<style>
+/* VOICE: relaxed, precise.  IDEA: a links course in the morning, one shot per hole at the flag.
+   PICTURE: side view of tee, fairway, pond and green with the flag; the ball arcs across.
+   COLOUR/TYPE: pale morning sky, fairway greens, sand, water blue, white ball; condensed scoring.
+   LAYOUT: icons top-left, hole card top-right, wind top-centre, clubs bottom-left, swing meter bottom-centre. */
+:root{color-scheme:dark;--lib-panel:#203029;--lib-edge:#36503f;--lib-ink:#fff;--lib-muted:#c9d8cf;--lib-acc:#f2c14e;--lib-acc-ink:#2a1f05}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;background:#86c3e6;color:#fff;font:15px/1.3 system-ui,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.tl{position:fixed;left:calc(8px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));display:flex;gap:6px;z-index:3}
+.card{position:fixed;right:calc(8px + env(safe-area-inset-right));top:calc(8px + env(safe-area-inset-top));z-index:3;background:rgba(20,32,26,.82);border-radius:12px;padding:6px 12px;display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:13px;color:#c9d8cf}
+.card b{color:#fff;font:700 18px/1.2 "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui;text-align:right;font-variant-numeric:tabular-nums}
+.clubs{position:fixed;left:calc(8px + env(safe-area-inset-left));bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:6px;z-index:3}
+.clubs button{min-height:48px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:rgba(20,32,26,.7);color:#fff;font:600 14px system-ui,Roboto,sans-serif;line-height:1.1}
+.clubs button small{display:block;font-weight:400;font-size:11px;color:#c9d8cf}
+.clubs button[aria-pressed=true]{background:#f2c14e;color:#2a1f05}.clubs button[aria-pressed=true] small{color:#5a4510}
+.clubs button:disabled{opacity:.5}
+@media (orientation:portrait){.clubs{left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom))}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="tl" id="icons"></div>
+<div class="card"><span>Loch</span><b id="hole">1/6</b><span>Entfernung</span><b id="dist">0 m</b><span>Punkte</span><b id="pts">0</b></div>
+<div class="clubs" id="clubs"></div>
+<script src="../lib.js"></script>
+<script>
+{
+const L=Lib,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d');
+const CLUBS=[{n:'Driver',r:'~220 m',v:72,a:11,l:.0022},{n:'Eisen',r:'~150 m',v:52,a:26,l:.0022},{n:'Wedge',r:'~95 m',v:36,a:46,l:.0018}];
+const HOLES=6,K=.0055,G=9.81;
+let vw,vh,s=3,state='menu',hole=0,pts=0,club=0,D=150,water=null,wind=0,ball=null,meter=null,trail=[],msg='',msgT=0,wait=0,maxY=0,results=[];
+let rec=+(L.store.get('golf_best')||0);const stat=()=>L.store.set('stat_golf',`Rekord ${rec} Punkte`);stat();
+
+function fit(){const dpr=window.devicePixelRatio||1;vw=innerWidth;vh=innerHeight;cv.width=vw*dpr;cv.height=vh*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',fit);fit();
+const gy=()=>vh*(vw>vh?.74:.62),X=x=>vw*.06+(x+4)*s,Y=y=>gy()-y*s;
+function clubsUI(){$('clubs').innerHTML=CLUBS.map((c,i)=>`<button data-i="${i}" aria-pressed="${i===club}" ${meter&&meter.stage>0||ball?'disabled':''}>${c.n}<small>${c.r}</small></button>`).join('');
+  $('clubs').querySelectorAll('button').forEach(b=>b.onclick=e=>{e.stopPropagation();club=+b.dataset.i;clubsUI()})}
+function ui(){$('hole').textContent=`${Math.min(hole,HOLES)}/${HOLES}`;$('dist').textContent=`${Math.round(D)} m`;$('pts').textContent=pts}
+function say(t,d=1.8){msg=t;msgT=d}
+function newGame(){hole=0;pts=0;results=[];state='play';L.orient('landscape');nextHole()}
+function nextHole(){
+  if(hole>=HOLES)return finish();hole++;D=Math.round(80+Math.random()*170);
+  water=Math.random()<.5&&D>110?{a:D-55-Math.random()*25,w:18+Math.random()*16}:null;
+  wind=Math.round((Math.random()*2-1)*7);ball=null;trail=[];maxY=0;meter={stage:0,pos:0,dir:1,power:0,acc:0};
+  club=D>175?0:D>115?1:2;ui();clubsUI();
+}
+function finish(){state='over';if(pts>rec){rec=pts;L.store.set('golf_best',rec)}stat();
+  menu.show(pts>=rec&&pts>0?'Neuer Rekord!':'Runde beendet',`${pts} Punkte auf ${HOLES} Löchern (${results.join(' · ')}). Rekord: ${rec}.`,'Noch eine Runde')}
+// 3-click swing: 1 start, 2 power, 3 accuracy
+function click(){if(state!=='play'||!meter||ball)return;L.resume();const m=meter;
+  if(m.stage===0){m.stage=1;m.pos=0;m.dir=1;L.beep(500,.03,'sine',.03);clubsUI()}
+  else if(m.stage===1){m.power=Math.max(.05,m.pos);m.stage=2;m.dir=-1;L.beep(620,.03,'sine',.03)}
+  else if(m.stage===2){m.acc=m.pos-.06;hit()}}
+function hit(){const m=meter,c=CLUBS[club];let e=m.acc;if(m.power>1)e+=(Math.random()*2-1)*(m.power-1)*.8;e=Math.max(-.25,Math.min(.25,e));
+  const v=c.v*Math.min(1.08,m.power)*(1-Math.abs(e)*1.2),a=(c.a+e*45)*Math.PI/180;
+  ball={x:0,y:.05,vx:v*Math.cos(a),vy:v*Math.sin(a),lift:c.l*(1-Math.abs(e)*2.5),air:true,stop:false};meter=null;trail=[];maxY=0;
+  L.noise(.07,.35);L.beep(1100,.05,'triangle',.05);
+  say(Math.abs(e)<.025?'Perfekt getroffen':e>0?'Zu früh – flach':'Zu spät – hoch',1.1)}
+function settle(text,p){ball.stop=true;pts+=p;results.push(p);ui();say(text,2.4);wait=2.6}
+function step(dt){
+  if(meter&&meter.stage>0){const m=meter;m.pos+=m.dir*dt/(m.stage===1?1.05:.85);
+    if(m.stage===1&&m.pos>=1.12){m.pos=1.12;m.dir=-1;m.power=1.12;m.stage=2}
+    if(m.stage===2&&m.pos<-.2){m.acc=-.2;hit()}}
+  if(ball&&!ball.stop){const n=6;for(let i=0;i<n&&!ball.stop;i++){const h=dt/n,b=ball;
+    if(b.air){const sp=Math.hypot(b.vx,b.vy);b.vx+=(-K*sp*b.vx+wind*.32)*h;b.vy+=(-G-K*sp*b.vy+b.lift*sp*b.vx)*h;b.x+=b.vx*h;b.y+=b.vy*h;maxY=Math.max(maxY,b.y);
+      if(b.y<=0){b.y=0;if(water&&b.x>water.a&&b.x<water.a+water.w){L.noise(.4,.3);settle('Wasser! 0 Punkte',0);return}
+        const green=Math.abs(b.x-D)<10;b.vy=-b.vy*(green?.22:.3);b.vx*=green?.5:.62;if(b.vy<1.5){b.vy=0;b.air=false}L.beep(160,.03,'square',.03)}}
+    else{const green=Math.abs(b.x-D)<10;b.vx-=Math.sign(b.vx)*(green?2.6:4.5)*h;b.x+=b.vx*h;
+      if(water&&b.x>water.a&&b.x<water.a+water.w){L.noise(.4,.3);settle('Ins Wasser gerollt! 0 Punkte',0);return}
+      if(Math.abs(b.x-D)<.55&&Math.abs(b.vx)<7){b.x=D;L.beep(880,.2,'triangle',.06,1.5);L.vib([40,30,80]);settle('Eingelocht! 200 Punkte',200);return}
+      if(Math.abs(b.vx)<.15){const d=Math.abs(b.x-D),p=Math.max(0,Math.round(100-d*1.5));settle(`${d<1?d.toFixed(1):Math.round(d)} m vom Loch – ${p} Punkte`,p);return}}
+    }
+    if(!ball.stop)trail.push([ball.x,ball.y]);if(trail.length>600)trail.splice(0,trail.length-600)}
+  if(ball&&ball.stop){wait-=dt;if(wait<=0&&state==='play')nextHole()}
+  const span=Math.max(D+28,ball?ball.x+20:0);let ts=Math.min((vw*.9)/(span+4),(gy()-70)/Math.max(10,maxY+6));s+=(ts-s)*Math.min(1,dt*3);
+  if(msgT>0)msgT-=dt;
+}
+
+// ---------- drawing ----------
+function draw(){
+  const g=ctx.createLinearGradient(0,0,0,gy());g.addColorStop(0,'#86c3e6');g.addColorStop(1,'#dff0f7');ctx.fillStyle=g;ctx.fillRect(0,0,vw,vh);
+  // far hills
+  ctx.fillStyle='#9cc79a';ctx.beginPath();ctx.moveTo(0,gy());for(let x=0;x<=vw;x+=20)ctx.lineTo(x,gy()-30-Math.sin(x/90)*14-Math.sin(x/37)*6);ctx.lineTo(vw,gy());ctx.fill();
+  ctx.fillStyle='#6fae5b';ctx.fillRect(0,gy(),vw,vh-gy());
+  ctx.fillStyle='#7cbd66';ctx.fillRect(X(-4),gy(),X(D+30)-X(-4),Math.max(6,vh*.02));
+  ctx.fillStyle='#8fd178';ctx.fillRect(X(D-10),gy()-1,X(D+10)-X(D-10),Math.max(7,vh*.022));
+  if(water){ctx.fillStyle='#3a86c8';ctx.fillRect(X(water.a),gy(),X(water.a+water.w)-X(water.a),Math.max(10,vh*.03));ctx.fillStyle='rgba(255,255,255,.4)';ctx.fillRect(X(water.a)+4,gy()+3,(X(water.a+water.w)-X(water.a))*.4,2)}
+  ctx.fillStyle='#e3cf98';ctx.beginPath();ctx.ellipse(X(D+16),gy()+2,Math.max(10,s*4),4,0,0,Math.PI);ctx.fill();
+  // distance markers every 50 m
+  ctx.fillStyle='rgba(255,255,255,.85)';ctx.font='600 12px system-ui';ctx.textAlign='center';
+  for(let m=50;m<D+30;m+=50)if(Math.abs(m-D)>14){ctx.fillRect(X(m)-1,gy()-6,2,8);ctx.fillText(m,X(m),gy()+22)}
+  // flag (fixed pixel size)
+  const fx=X(D),fh=Math.min(70,vh*.16);ctx.fillStyle='#222';ctx.beginPath();ctx.ellipse(fx,gy(),5,2,0,0,7);ctx.fill();
+  ctx.fillStyle='#f5f5f5';ctx.fillRect(fx-1,gy()-fh,2.5,fh);ctx.fillStyle='#d8343a';ctx.beginPath();ctx.moveTo(fx+1,gy()-fh);ctx.lineTo(fx+fh*.42,gy()-fh*.86);ctx.lineTo(fx+1,gy()-fh*.72);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='700 13px system-ui';ctx.fillText(`${D} m`,fx,gy()-fh-6);
+  // golfer (fixed pixel size)
+  const gx=X(0)-10,u=Math.min(9,vh*.018),sw=meter&&meter.stage?Math.min(1,meter.stage===1?meter.pos:meter.pos):(ball?-1:0);
+  ctx.save();ctx.translate(gx,gy());ctx.lineCap='round';ctx.strokeStyle='#2c3e50';ctx.lineWidth=u*.7;ctx.beginPath();ctx.moveTo(-u*.6,0);ctx.lineTo(-u*.2,-u*3.2);ctx.moveTo(u*.6,0);ctx.lineTo(u*.2,-u*3.2);ctx.stroke();
+  ctx.fillStyle='#e85d75';ctx.fillRect(-u,-u*6.4,u*2,u*3.4);ctx.fillStyle='#e0b48a';ctx.beginPath();ctx.arc(0,-u*7.4,u*.9,0,7);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-u,-u*8.1,u*2,u*.5);
+  const ang=(sw<0?-40:100-sw*120)*Math.PI/180;ctx.strokeStyle='#bbb';ctx.lineWidth=u*.3;ctx.beginPath();ctx.moveTo(0,-u*5);ctx.lineTo(Math.cos(ang)*u*5.2,-u*5+Math.sin(ang)*u*5.2);ctx.stroke();ctx.restore();
+  // ball + trail
+  ctx.fillStyle='rgba(255,255,255,.55)';trail.forEach(([x,y],i)=>{if(i%2)return;ctx.fillRect(X(x)-1,Y(y)-1,2,2)});
+  const b=ball||{x:0,y:0};ctx.fillStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.ellipse(X(b.x),gy(),4,1.5,0,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(X(b.x),Y(b.y)-3,3.5,0,7);ctx.fill();
+  // wind
+  ctx.textAlign='center';ctx.font='700 16px system-ui';ctx.fillStyle='rgba(20,32,26,.8)';const wt=wind===0?'Windstill':`Wind ${wind<0?'←':'→'} ${Math.abs(wind)} m/s`;
+  ctx.fillText(wt,vw/2,30);
+  // swing meter
+  if(meter){const w=Math.min(420,vw*.5),h=22,x0=vw/2-w/2,y0=vh-46;const px=p=>x0+w*(p+.2)/1.32;
+    ctx.fillStyle='rgba(20,32,26,.8)';ctx.fillRect(x0-6,y0-6,w+12,h+12);
+    const gr=ctx.createLinearGradient(px(0),0,px(1.12),0);gr.addColorStop(0,'#5bbf6a');gr.addColorStop(.75,'#f2c14e');gr.addColorStop(.9,'#e85d3a');ctx.fillStyle=gr;ctx.fillRect(px(0),y0,px(1.12)-px(0),h);
+    ctx.fillStyle='#fff';ctx.fillRect(px(.06)-2,y0-4,4,h+8);ctx.fillStyle='rgba(255,255,255,.35)';ctx.fillRect(px(-.02),y0,px(.14)-px(-.02),h);
+    ctx.fillStyle='#fff';ctx.fillRect(px(1)-1,y0,2,h);
+    if(meter.stage===2){ctx.fillStyle='#1d3b2a';ctx.fillRect(px(meter.power)-2,y0-3,4,h+6)}
+    if(meter.stage>0){ctx.fillStyle='#111';ctx.fillRect(px(meter.pos)-2,y0-6,4,h+12)}
+    ctx.fillStyle='rgba(20,32,26,.85)';ctx.font='600 14px system-ui';
+    ctx.fillText(meter.stage===0?'Tippen: Schwung starten':meter.stage===1?'Tippen: Kraft festlegen':'Tippen an der weißen Linie',vw/2,y0-14)}
+  if(msgT>0){ctx.globalAlpha=Math.min(1,msgT*3);ctx.font=`800 ${Math.min(44,vw/14)}px "Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui`;ctx.lineWidth=6;ctx.strokeStyle='rgba(0,0,0,.4)';
+    ctx.strokeText(msg,vw/2,vh*.3);ctx.fillStyle='#fff';ctx.fillText(msg,vw/2,vh*.3);ctx.globalAlpha=1}
+}
+let last=performance.now();(function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;if(state==='play')step(dt);draw();requestAnimationFrame(loop)})(last);
+cv.addEventListener('pointerdown',click);
+addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();click()}else if(/^[1-3]$/.test(e.key)&&meter&&!meter.stage){club=+e.key-1;clubsUI()}});
+const menu=L.menu({prefix:'golf_',title:'Golf',
+  text:'6 Löcher, je ein Schlag aufs Grün. Wähl den Schläger, dann dreimal tippen: Schwung starten, Kraft festlegen, und auf dem Rückweg genau an der weißen Linie treffen. Achte auf Wind und Wasser. Je näher am Loch, desto mehr Punkte.',
+  onStart:()=>newGame()});
+L.icons($('icons'),{onMenu:()=>{state='menu';menu.show()},orient:'landscape'});
+nextHole();state='menu';
+}
+</script>
+</body>
+</html>
