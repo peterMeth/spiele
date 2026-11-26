@@ -26,6 +26,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <canvas id="c"></canvas>
 <div class="tl" id="icons"></div>
 <div class="card"><span>Passe</span><b id="end">1/4</b><span>Entfernung</span><b id="dist">18 m</b><span>Diese Passe</span><b id="arrows">–</b><span>Gesamt</span><b id="tot">0</b></div>
+<script src="../config.js"></script>
 <script src="../lib.js"></script>
 <script>
 {
@@ -53,7 +54,7 @@ function land(){const{mx,my}=flight;flight=null;const r=Math.hypot(mx,my);let sc
   hits.push([mx,my]);endScores.push(sc);total+=Math.min(10,sc);shot++;ui();L.beep(sc?120:80,.08,'square',.05);if(sc>=10)L.vib(30);
   say(sc===11?'X – Mitte!':sc?`${sc} Ringe`:'Daneben',1.1);
   if(shot>=PER){setTimeout(()=>{end++;if(end>=4)finish();else startEnd()},1500)}}
-function finish(){state='over';if(total>rec){rec=total;L.store.set('bogen_best',rec)}stat();
+function finish(){state='over';L.submit('bogen',total);if(total>rec){rec=total;L.store.set('bogen_best',rec)}stat();
   menu.show(total>=rec&&total>0?'Neuer Rekord!':'Wettkampf beendet',`${total} von 120 Ringen. Rekord: ${rec}.`,'Noch einmal')}
 
 function ringPath(r){ctx.beginPath();ctx.arc(cx,cy,r,0,7)}
@@ -105,7 +106,7 @@ addEventListener('keyup',e=>{if(e.key===' '&&hold){e.preventDefault();release()}
 const menu=L.menu({prefix:'bogen_',title:'Bogenschießen',
   text:'4 Passen à 3 Pfeile auf 18, 30, 50 und 70 m. Finger auflegen und halten spannt den Bogen, Ziehen verschiebt das Visier, Loslassen schießt. Halte nicht zu lange, sonst zittert der Arm. Wind lenkt den Pfeil ab, also etwas gegen den Wind zielen.',
   onStart:()=>newGame()});
-L.icons($('icons'),{onMenu:()=>{state='menu';menu.show()}});
+L.icons($('icons'),{board:'bogen',onMenu:()=>{state='menu';menu.show()}});
 fit();
 }
 </script>

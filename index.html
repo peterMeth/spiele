@@ -27,6 +27,7 @@ h1{font:700 48px/1.05 var(--cond);font-stretch:condensed;margin:0}
 .fs{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;border:1px solid var(--edge);background:var(--shelf);color:var(--ink);cursor:pointer}
 .fs[hidden]{display:none}
 .fs svg{width:24px;height:24px}
+#player{margin:-8px 0 14px}
 .list{display:grid;gap:14px}
 .cart{display:grid;grid-template-columns:96px minmax(0,1fr);gap:14px;align-items:center;text-decoration:none;color:var(--ink);
   background:var(--shelf);border-radius:16px;padding:12px;border-left:10px solid var(--c);
@@ -46,12 +47,16 @@ h1{font:700 48px/1.05 var(--cond);font-stretch:condensed;margin:0}
 <main>
   <header>
     <div><h1>Spiele</h1><p class="sub">Tippen und losspielen, auch offline</p></div>
+    <div style="display:flex;gap:8px"><button class="fs" id="board" aria-label="Bestenliste" hidden></button>
     <button class="fs" id="fs" aria-label="Vollbild" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
-    </button>
+    </button></div>
   </header>
+  <p class="sub" id="player" hidden></p>
   <div class="list" id="list"></div>
 </main>
+<script src="config.js"></script>
+<script src="lib.js"></script>
 <script>
 {
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -75,7 +80,13 @@ fs.addEventListener('click',async()=>{
 });
 addEventListener('pageshow',()=>{fetch('games.json').then(r=>r.json()).then(render).catch(()=>{})});
 
-if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.serviceWorker.register('sw.js').catch(()=>{})}
+// Bestenliste
+const O=window.Lib&&Lib.online;
+function who(){const p=document.getElementById('player');if(!O||!O.enabled){p.hidden=true;return}p.hidden=false;
+  p.innerHTML=O.name?`Du spielst als <b>${esc(O.name)}</b> · <a href="#" id="chn" style="color:inherit">ändern</a>`:'<a href="#" id="chn" style="color:inherit">Spielernamen für die Bestenliste wählen</a>';
+  document.getElementById('chn').onclick=e=>{e.preventDefault();O.askName(who)}}
+if(O&&O.enabled){const bb=document.getElementById('board');bb.hidden=false;bb.innerHTML=O.trophy;bb.onclick=()=>O.board();who();
+  if(!O.name&&!Lib.store.get('sb_later'))setTimeout(()=>O.askName(who),600)}
 }
 </script>
 </body>

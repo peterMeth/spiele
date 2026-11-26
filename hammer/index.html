@@ -32,6 +32,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <div class="tl" id="icons"></div>
 <div class="card"><span>Versuch</span><b id="att">1/3</b><span>Letzter</span><b id="lastd">–</b><span>Bester</span><b id="bestd">–</b></div>
 <div class="btns"><button id="spin">Schwung</button><button id="rel" disabled>Loslassen</button></div>
+<script src="../config.js"></script>
 <script src="../lib.js"></script>
 <script>
 {
@@ -67,7 +68,7 @@ function landed(){const f=fly;let res=0;
   else{res=f.d-CIRC;marks.push({x:Math.cos(f.ang)*f.d,y:Math.sin(f.ang)*f.d,ok:true,d:res});say(`${res.toFixed(2)} m`,2.4);L.noise(.3,.4);L.vib(50);if(res>best)best=res}
   lastD=res;results.push(res?res.toFixed(2):'x');attempt++;phase='land';ui();
   setTimeout(()=>{if(state!=='play')return;if(attempt>=TRIES)finish();else ready()},2600)}
-function finish(){state='over';ui();const newRec=best>rec;if(newRec){rec=best;L.store.set('hammer_best',rec)}stat();
+function finish(){state='over';if(best>0)L.submit('hammer',Math.round(best*100)/100);ui();const newRec=best>rec;if(newRec){rec=best;L.store.set('hammer_best',rec)}stat();
   menu.show(newRec?'Neuer Rekord!':'Wettkampf beendet',`Beste Weite ${best?best.toFixed(2)+' m':'keine gültige'} (${results.join(' · ')}). Rekord: ${rec.toFixed(2)} m. Weltrekord der Männer: 86,74 m.`,'Noch einmal')}
 function step(dt){
   zoom+=(zt-zoom)*Math.min(1,dt*2.2);if(msgT>0)msgT-=dt;
@@ -119,7 +120,7 @@ addEventListener('keydown',e=>{if(e.repeat)return;if(e.key===' '){e.preventDefau
 const menu=L.menu({prefix:'hammer_',title:'Hammerwurf',
   text:'Tippe „Schwung“ immer dann, wenn der Hammer durch den gelben Bereich saust – so wird er schneller. Tippe „Loslassen“, wenn der grüne Pfeil in den Sektor zeigt. 3 Versuche, nach 8 Drehungen musst du werfen.',
   onStart:()=>newGame()});
-L.icons($('icons'),{onMenu:()=>{state='menu';ui();menu.show()}});
+L.icons($('icons'),{board:'hammer',onMenu:()=>{state='menu';ui();menu.show()}});
 ui();
 }
 </script>

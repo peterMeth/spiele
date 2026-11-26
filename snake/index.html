@@ -97,6 +97,8 @@ a.ico{min-height:44px;border-radius:12px;background:var(--key);box-shadow:inset 
   </div>
 </div>
 <p class="hint">Tastatur: Pfeiltasten oder WASD, Leertaste hält an</p>
+<script src="../config.js"></script>
+<script src="../lib.js"></script>
 <script>
 {
 const $=id=>document.getElementById(id);
@@ -165,7 +167,7 @@ function turn(x,y){
 
 function die(){
   state='over';beep(140,.4,'sawtooth');vib([60,40,120]);
-  const rec=score>hi;if(rec){hi=score;store.set('snake_hi',hi)}setScore();
+  const rec=score>hi;if(rec){hi=score;store.set('snake_hi',hi)}setScore();window.Lib&&Lib.submit('snake',score);
   show(rec?'Neuer Rekord!':'Game Over',`${score} Punkte auf Level ${level}, Schlange war ${snake.length} lang.`,'Noch mal',true);
 }
 function tick(){
@@ -185,7 +187,7 @@ function tick(){
   if(bonus&&--bonus.t<=0)bonus=null;
   if(grow>0)grow--;else snake.pop();
   setScore();
-  if(!food&&!bonus){state='over';if(score>hi){hi=score;store.set('snake_hi',hi)}setScore();show('Durchgespielt!','Das ganze Display ist voll. Respekt.','Noch mal',true)}
+  if(!food&&!bonus){state='over';window.Lib&&Lib.submit('snake',score);if(score>hi){hi=score;store.set('snake_hi',hi)}setScore();show('Durchgespielt!','Das ganze Display ist voll. Respekt.','Noch mal',true)}
 }
 
 function blk(x,y,inset){const c=cell,g=Math.max(1,Math.round(c*.08));ctx.fillRect(x*c+g+inset,y*c+g+inset,c-2*g-2*inset,c-2*g-2*inset)}
@@ -251,5 +253,7 @@ if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.service
 setSound(sound);setLevel(level);show('Snake',$('mp').textContent,'Spiel starten',true);fit();
 }
 </script>
+
+<script>if(window.Lib&&Lib.online.enabled){const b=document.createElement('button');b.type='button';b.className='lib-ico';b.innerHTML=Lib.online.trophy;b.setAttribute('aria-label','Bestenliste');b.onclick=()=>Lib.online.board('snake');const p=document.querySelector('.icons');p.insertBefore(b,document.getElementById('snd'))}</script>
 </body>
 </html>

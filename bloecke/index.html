@@ -55,6 +55,7 @@ button.box{border:0;color:inherit;font:inherit;cursor:pointer}
   <button data-k="hard" aria-label="Fallen lassen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5l7 7 7-7zM5 12l7 7 7-7z"/></svg></button>
   <button data-k="right" aria-label="Rechts"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 5l8 7-8 7z"/></svg></button>
 </div>
+<script src="../config.js"></script>
 <script src="../lib.js"></script>
 <script>
 {
@@ -90,7 +91,7 @@ function clearRows(){
   lines+=rows.length;score+=[0,100,300,500,800][rows.length]*level;level=Math.max(level,startLvl+Math.floor(lines/10));nextPiece();
 }
 function nextPiece(){cur=spawn(nextK);nextK=draw7();canHold=true;lockT=0;lockMoves=0;fallT=0;if(!fits(cur.m,cur.x,cur.y))return gameOver();ui()}
-function gameOver(){state='over';L.noise(.5,.25);const rec=score>hi;if(rec){hi=score;L.store.set('bloecke_hi',hi)}L.store.set('stat_bloecke',`Rekord ${hi} Punkte`);ui();
+function gameOver(){state='over';L.submit('bloecke',score);L.noise(.5,.25);const rec=score>hi;if(rec){hi=score;L.store.set('bloecke_hi',hi)}L.store.set('stat_bloecke',`Rekord ${hi} Punkte`);ui();
   menu.show(rec?'Neuer Rekord!':'Game Over',`${score} Punkte, ${lines} Reihen, Level ${level}.`,'Noch mal')}
 
 // ---------- drawing ----------
@@ -143,7 +144,7 @@ const menu=L.menu({prefix:'bloecke_',title:'Blöcke',
   text:'Dreh und schieb die fallenden Blöcke so, dass volle Reihen entstehen. Antippen dreht, Wischen schiebt, schnell nach unten wischen lässt fallen.',
   rows:[{key:'lvl',label:'Startlevel',opts:[['1',1],['3',3],['5',5],['8',8]],def:1}],
   onStart:s=>{if(state==='pause'){state='play';return}startLvl=s.lvl;newGame()}});
-L.icons($('icons'),{onMenu:()=>{if(state==='play'){state='pause';menu.show('Pause',`${score} Punkte, Level ${level}.`,'Weiter',false)}else menu.show()},orient:'portrait'});
+L.icons($('icons'),{board:'bloecke',onMenu:()=>{if(state==='play'){state='pause';menu.show('Pause',`${score} Punkte, Level ${level}.`,'Weiter',false)}else menu.show()},orient:'portrait'});
 L.store.set('stat_bloecke',`Rekord ${hi} Punkte`);ui();fit();
 }
 </script>

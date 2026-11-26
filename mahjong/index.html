@@ -33,6 +33,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 <div class="top" id="icons"></div>
 <div class="stage" id="stage"><canvas id="c"></canvas></div>
 <div class="foot"><span id="info"></span><div class="btns"><button id="hint">Tipp</button><button id="shuffle">Mischen</button><button id="again">Neu</button></div></div>
+<script src="../config.js"></script>
 <script src="../lib.js"></script>
 <script>
 {
@@ -84,7 +85,7 @@ function newGame(){
 function movesAvail(){const fr=alive().filter(t=>free(t));for(let i=0;i<fr.length;i++)for(let j=i+1;j<fr.length;j++)if(match(fr[i],fr[j]))return[fr[i],fr[j]];return null}
 function info(){const n=alive().length;$('info').textContent=`${n} Steine übrig`+(state==='play'?'':'');}
 function take(a,b){undo.push([a,b]);a.alive=b.alive=false;sel=null;hintPair=null;L.beep(880,.06,'triangle',.05);L.vib(12);info();
-  if(!alive().length){state='won';const s=(performance.now()-start)/1000;wins++;if(!best||s<best)best=s;L.store.set('mahjong_wins',wins);L.store.set('mahjong_best',Math.round(best));stat();
+  if(!alive().length){state='won';const s=(performance.now()-start)/1000;wins++;L.submit('mahjong',Math.round(s));if(!best||s<best)best=s;L.store.set('mahjong_wins',wins);L.store.set('mahjong_best',Math.round(best));stat();
     L.beep(660,.2,'triangle',.06,1.5);setTimeout(()=>menu.show('Geschafft!',`Alle Steine in ${fmt(s)} abgeräumt. Bestzeit ${fmt(best)}.`,'Neues Spiel'),500);return}
   if(!movesAvail())setTimeout(()=>{if(state==='play'&&!movesAvail())menu.show('Keine Paare mehr',`Es gibt keinen passenden freien Zug. Mischen verteilt die ${alive().length} Steine neu, sodass es lösbar bleibt.`,'Mischen',false)},400)}
 
@@ -152,7 +153,7 @@ $('again').onclick=()=>newGame();
 const menu=L.menu({prefix:'mahjong_',title:'Mahjong',
   text:'Räum alle Steine paarweise ab. Ein Stein ist frei, wenn nichts auf ihm liegt und links oder rechts kein Nachbar ist. Gleiche Steine passen zusammen, jede Blume zu jeder Blume, jede Jahreszeit zu jeder Jahreszeit. Jede Partie ist lösbar.',
   onStart:()=>{if(state==='play'&&!movesAvail()&&alive().length){reshuffle();return}if(state!=='play')newGame()}});
-L.icons($('icons'),{onMenu:()=>{menu.show('Mahjong',`${wins} Partien gelöst`+(best?`, Bestzeit ${fmt(best)}.`:'.'),state==='play'?'Weiterspielen':'Spiel starten',false)},
+L.icons($('icons'),{board:'mahjong',onMenu:()=>{menu.show('Mahjong',`${wins} Partien gelöst`+(best?`, Bestzeit ${fmt(best)}.`:'.'),state==='play'?'Weiterspielen':'Spiel starten',false)},
   onUndo:()=>{if(state!=='play'||!undo.length)return;const[a,b]=undo.pop();a.alive=b.alive=true;sel=null;info()}});
 stat();
 }

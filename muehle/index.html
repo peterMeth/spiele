@@ -30,6 +30,7 @@ canvas{position:absolute;display:block;touch-action:none}
 <div class="st" id="st"></div>
 <div class="stage" id="stage"><canvas id="c"></canvas></div>
 <div class="foot"><span id="count"></span><button id="again">Neue Partie</button></div>
+<script src="../config.js"></script>
 <script src="../lib.js"></script>
 <script>
 {
@@ -93,7 +94,7 @@ function status(txt){
 function newGame(){b=Array(24).fill(-1);hand=[9,9];turn=starter;over=false;busy=false;ui='pick';selFrom=-1;last=null;quiet=0;L.orient('portrait');next()}
 function next(){
   legal=gen(b,hand,turn);
-  if(lost(b,hand,turn)){over=true;const w=1-turn,n=names();score[w]++;if(!set.mode)L.record('muehle',w===0);
+  if(lost(b,hand,turn)){over=true;const w=1-turn,n=names();score[w]++;if(!set.mode)L.record('muehle',w===0,'gegen PC',set.diff+1);
     status(set.mode?`${n[w]} gewinnt!`:(w===0?'Du gewinnst!':'Der PC gewinnt'));L.beep(w===0||set.mode?880:220,.35,'triangle',.06,w===0||set.mode?1.5:.6);starter=1-starter;return}
   if(quiet>=60){over=true;status('Remis – 30 Züge ohne Mühle');starter=1-starter;return}
   ui='pick';selFrom=-1;status();
@@ -164,7 +165,7 @@ const menu=L.menu({prefix:'muehle_',title:'Mühle',
   rows:[{key:'mode',label:'Modus',opts:[['Gegen PC',0],['1 vs 1',1]],def:0},{key:'diff',label:'PC',opts:[['Leicht',0],['Mittel',1],['Schwer',2]],def:1,showIf:s=>s.mode===0}],
   onStart:()=>{score=[0,0];starter=0;newGame()}});
 set=menu.settings;
-L.icons($('icons'),{onMenu:()=>{over=true;menu.show()},orient:'portrait'});
+L.icons($('icons'),{board:'muehle',onMenu:()=>{over=true;menu.show()},orient:'portrait'});
 b=Array(24).fill(-1);status(' ');fit();
 }
 </script>

@@ -32,6 +32,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <div class="tl" id="icons"></div>
 <div class="card"><span>Loch</span><b id="hole">1/6</b><span>Entfernung</span><b id="dist">0 m</b><span>Punkte</span><b id="pts">0</b></div>
 <div class="clubs" id="clubs"></div>
+<script src="../config.js"></script>
 <script src="../lib.js"></script>
 <script>
 {
@@ -55,7 +56,7 @@ function nextHole(){
   wind=Math.round((Math.random()*2-1)*7);ball=null;trail=[];maxY=0;meter={stage:0,pos:0,dir:1,power:0,acc:0};
   club=D>175?0:D>115?1:2;ui();clubsUI();
 }
-function finish(){state='over';if(pts>rec){rec=pts;L.store.set('golf_best',rec)}stat();
+function finish(){state='over';L.submit('golf',pts);if(pts>rec){rec=pts;L.store.set('golf_best',rec)}stat();
   menu.show(pts>=rec&&pts>0?'Neuer Rekord!':'Runde beendet',`${pts} Punkte auf ${HOLES} Löchern (${results.join(' · ')}). Rekord: ${rec}.`,'Noch eine Runde')}
 // 3-click swing: 1 start, 2 power, 3 accuracy
 function click(){if(state!=='play'||!meter||ball)return;L.resume();const m=meter;
@@ -135,7 +136,7 @@ addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault
 const menu=L.menu({prefix:'golf_',title:'Golf',
   text:'6 Löcher, je ein Schlag aufs Grün. Wähl den Schläger, dann dreimal tippen: Schwung starten, Kraft festlegen, und auf dem Rückweg genau an der weißen Linie treffen. Achte auf Wind und Wasser. Je näher am Loch, desto mehr Punkte.',
   onStart:()=>newGame()});
-L.icons($('icons'),{onMenu:()=>{state='menu';menu.show()},orient:'landscape'});
+L.icons($('icons'),{board:'golf',onMenu:()=>{state='menu';menu.show()},orient:'landscape'});
 nextHole();state='menu';
 }
 </script>

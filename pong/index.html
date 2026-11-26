@@ -79,6 +79,8 @@ a.home svg{width:22px;height:22px}
   <button id="snd" aria-pressed="true">Ton an</button>
   <button id="fs" hidden>Vollbild</button>
 </div>
+<script src="../config.js"></script>
+<script src="../lib.js"></script>
 <script>
 {
 const W=450,H=800,PW=92,PH=14,R=9,WIN=11;
@@ -161,7 +163,7 @@ function point(bottomScored){
   if(top>=WIN&&lead>=2){
     state='over';
     if(mode){show(s.p>s.c?'Spieler 1 gewinnt!':'Spieler 2 gewinnt!',`Endstand ${s.p} : ${s.c}.`,'Noch mal')}
-    else if(s.p>s.c){wins++;store.set('pong_wins',wins);show('Gewonnen!',`${s.p} : ${s.c} gegen den PC (${DN[diff]}).`,'Noch mal')}
+    else if(s.p>s.c){wins++;store.set('pong_wins',wins);window.Lib&&Lib.submit('pong',diff+1);show('Gewonnen!',`${s.p} : ${s.c} gegen den PC (${DN[diff]}).`,'Noch mal')}
     else{losses++;store.set('pong_losses',losses);show('Verloren',`${s.p} : ${s.c}. Der PC war diesmal schneller.`,'Revanche')}
     setScore();return;
   }
@@ -283,5 +285,7 @@ if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.service
 setDiff(diff);setMode(mode);fit();
 }
 </script>
+
+<script>if(window.Lib&&Lib.online.enabled){const b=document.createElement('button');b.type='button';b.className='lib-ico';b.innerHTML=Lib.online.trophy;b.setAttribute('aria-label','Bestenliste');b.onclick=()=>Lib.online.board('pong');const p=document.querySelector('.bar');p.insertBefore(b,p.children[1]||null)}</script>
 </body>
 </html>

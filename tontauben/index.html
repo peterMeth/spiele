@@ -35,6 +35,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:
 <div class="tl" id="icons"></div>
 <div class="card"><span>Punkte</span><b id="sc">0</b><span>Zeit</span><b id="tm">90</b><span>Treffer</span><b id="hits">0</b></div>
 <button id="reload" aria-label="Nachladen"><span class="sh" id="shells"><i></i><i></i></span>Nachladen</button>
+<script src="../config.js"></script>
 <script src="../lib.js"></script>
 <script>
 {
@@ -64,7 +65,7 @@ function shoot(px,py){if(state!=='play')return;L.resume();cross={x:px,y:py,t:.4}
   else if(n)L.beep(1300,.04,'triangle',.04);
   ui()}
 function reload(){if(state!=='play'||shells===2||reloading>0)return;reloading=.55;L.beep(400,.05,'square',.04);setTimeout(()=>L.beep(520,.05,'square',.04),250)}
-function finish(){state='over';const acc=shots?Math.round(hitN/shots*100):0;const nr=score>rec;if(nr){rec=score;L.store.set('tontauben_best',rec)}stat();ui();
+function finish(){state='over';L.submit('tontauben',score);const acc=shots?Math.round(hitN/shots*100):0;const nr=score>rec;if(nr){rec=score;L.store.set('tontauben_best',rec)}stat();ui();
   menu.show(nr?'Neuer Rekord!':'Zeit um!',`${score} Punkte · ${hitN} Treffer bei ${shots} Schüssen (${acc} %). Rekord: ${rec}.`,'Noch eine Runde')}
 function step(dt){
   time-=dt;if(time<=0){time=0;finish();return}
@@ -109,7 +110,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='p
 const menu=L.menu({prefix:'tontauben_',title:'Tontauben',
   text:'90 Sekunden: Tippe auf die fliegenden Tontauben. Die Flinte hat 2 Schuss, dann „Nachladen“ tippen (am PC: Leertaste oder Rechtsklick). Kleine, ferne Tauben bringen mehr Punkte, goldene 50, zwei mit einem Schuss +25.',
   onStart:()=>{if(state==='pause'){state='play';return}newGame()}});
-L.icons($('icons'),{onMenu:()=>{if(state==='play'){state='pause';menu.show('Pause',`${score} Punkte, noch ${Math.ceil(time)} s.`,'Weiter',false)}else menu.show()},orient:'landscape'});
+L.icons($('icons'),{board:'tontauben',onMenu:()=>{if(state==='play'){state='pause';menu.show('Pause',`${score} Punkte, noch ${Math.ceil(time)} s.`,'Weiter',false)}else menu.show()},orient:'landscape'});
 ui();
 }
 </script>

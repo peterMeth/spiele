@@ -108,6 +108,8 @@ button:focus-visible,.ico:focus-visible{outline:3px solid var(--ban);outline-off
   <div class="num"><span>Kraft</span><button data-adj="power,-1" aria-label="Kraft kleiner">−</button><output id="pow">50</output><button data-adj="power,1" aria-label="Kraft größer">+</button></div>
   <button class="go" id="throw">Werfen</button>
 </div>
+<script src="../config.js"></script>
+<script src="../lib.js"></script>
 <script>
 {
 const $=id=>document.getElementById(id);
@@ -235,7 +237,7 @@ function handle(r){
 }
 function finish(w){
   state='over';updCtrl();const n=names();
-  if(!mode){if(w===0)wins++;else losses++;store.set('gor_wins',wins);store.set('gor_losses',losses);store.set('stat_gorillas',`${wins} Siege · ${losses} Niederlagen gegen PC`)}
+  if(!mode){if(w===0){wins++;window.Lib&&Lib.submit('gorillas',diff+1)}else losses++;store.set('gor_wins',wins);store.set('gor_losses',losses);store.set('stat_gorillas',`${wins} Siege · ${losses} Niederlagen gegen PC`)}
   $('mt').textContent=mode?`${n[w]} gewinnt!`:(w===0?'Gewonnen!':'Verloren');
   $('mp').textContent=`Endstand ${P[0].score} : ${P[1].score}.`+(mode?'':` Bilanz gegen den PC: ${wins} Siege, ${losses} Niederlagen.`);
   $('go').textContent='Noch mal';$('over').hidden=false;
@@ -352,5 +354,7 @@ if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.service
 setSound(sound);makeCity();updWind();updScore();fit();requestAnimationFrame(loop);
 }
 </script>
+
+<script>if(window.Lib&&Lib.online.enabled){const b=document.createElement('button');b.type='button';b.className='lib-ico';b.innerHTML=Lib.online.trophy;b.setAttribute('aria-label','Bestenliste');b.onclick=()=>Lib.online.board('gorillas');const p=document.querySelector('.top');p.insertBefore(b,document.getElementById('snd'))}</script>
 </body>
 </html>
